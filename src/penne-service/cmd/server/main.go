@@ -11,19 +11,17 @@ import (
 
 func main() {
 	app := fx.New(
+		pkg.Module,
+		db.Module,
+		handlers.Module,
 		fx.Provide(
-			db.CreateConfig,
-			db.NewDb,
-			db.NewPgTransactionRowsRepo,
-			handlers.NewTransactionServiceHandler,
 			NewApplication,
 			NewMux,
 			NewHTTPServer,
-			pkg.NewLogger,
 		),
 		fx.Invoke(
-			func(httpServer *http.Server) {},
 			RegisterRoutes,
+			func(s *http.Server) {},
 		),
 	)
 

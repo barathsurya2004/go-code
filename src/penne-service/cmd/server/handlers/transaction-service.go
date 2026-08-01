@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"go.uber.org/zap"
 )
@@ -33,6 +34,7 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(txn)
 }
 
 func (h *TransactionServiceHandler) GetTransactionByUUID(w http.ResponseWriter, r *http.Request) {

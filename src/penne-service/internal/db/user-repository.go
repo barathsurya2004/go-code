@@ -14,7 +14,7 @@ type pgUserRepo struct {
 	db *sql.DB
 }
 
-func NewPgUserRepo(db *sql.DB) *pgUserRepo {
+func NewPgUserRepo(db *sql.DB) core.UserRepository {
 	return &pgUserRepo{
 		db: db,
 	}
