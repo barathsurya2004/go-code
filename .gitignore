@@ -1,0 +1,40 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor settings and swap files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Go build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+.coverprofile
+
+# Common build and temp directories
+build/
+dist/
+tmp/
+temp/
+.cache/
+
+# Local database files and dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump

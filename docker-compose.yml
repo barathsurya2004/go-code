@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: penne_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: penne_app
+    ports:
+      - "5432:5432" # Maps localhost:5432 to the container's 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data # Persists your data even if the container stops
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d penne_app"]
+      interval: 5s
+      timeout: 6s
+      retries: 5
+  penne-service:
+    build:
+      context: .
+      dockerfile: src/penne-service/DockerFile
+    container_name: penne_service
+    ports:
+      - "8080:8080" # Maps localhost:8080 to the container's 8080
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/penne_app
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+volumes:
+  pgdata:
