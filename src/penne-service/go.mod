@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/barathsurya2004/go-code/pkg v0.0.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/lib/pq v1.12.3
 	go.uber.org/fx v1.24.0

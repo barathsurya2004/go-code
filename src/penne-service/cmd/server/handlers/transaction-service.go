@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"go.uber.org/zap"
 )
