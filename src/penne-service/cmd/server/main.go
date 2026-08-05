@@ -9,8 +9,8 @@ import (
 	"go.uber.org/fx"
 )
 
-func main() {
-	app := fx.New(
+func buildApp(opts ...fx.Option) *fx.App {
+	baseOpts := []fx.Option{
 		pkg.Module,
 		db.Module,
 		handlers.Module,
@@ -23,8 +23,12 @@ func main() {
 			RegisterRoutes,
 			func(s *http.Server) {},
 		),
-	)
+	}
+	baseOpts = append(baseOpts, opts...)
+	return fx.New(baseOpts...)
+}
 
+func main() {
+	app := buildApp()
 	app.Run()
-
 }
