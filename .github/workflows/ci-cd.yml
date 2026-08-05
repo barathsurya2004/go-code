@@ -1,0 +1,75 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          check-latest: true
+          cache: true # Ensures Go modules are cached between runs
+
+      - name: Verify Go Workspace
+        run: go work sync
+
+      - name: Test pkg module
+        run: |
+          cd pkg
+          go test -v -coverprofile=coverage.out ./...
+
+      - name: Test penne-service module
+        run: |
+          cd src/penne-service
+          go test -v -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Verify penne-service Coverage > 95%
+        run: |
+          cd src/penne-service
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage is ${COVERAGE}%"
+          awk -v cov="$COVERAGE" 'BEGIN { if (cov < 95.0) { print "Coverage below 95%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
+
+      - name: Upload Coverage Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            pkg/coverage.out
+            src/penne-service/coverage.out
+
+  build:
+    name: Build Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Fixed the 'F' to lowercase 'f' (assuming standard naming)
+          file: ./src/penne-service/Dockerfile 
+          push: false
+          # Fixed the tag name
+          tags: penne-service:latest 
+          # Leverages GitHub Actions cache for faster Docker builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
