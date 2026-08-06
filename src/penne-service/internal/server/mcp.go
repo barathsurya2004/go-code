@@ -186,3 +186,25 @@ func OAuthTokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte(response))
 }
+
+// OAuthMetadataHandler returns RFC 8414 / RFC 9728 metadata for Gemini auto-discovery.
+func OAuthMetadataHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	baseURL := "https://" + r.Host
+
+	metadata := map[string]any{
+		"issuer":                           baseURL,
+		"authorization_endpoint":           baseURL + "/oauth/authorize",
+		"token_endpoint":                   baseURL + "/oauth/token",
+		"response_types_supported":         []string{"code"},
+		"grant_types_supported":            []string{"authorization_code"},
+		"code_challenge_methods_supported": []string{"S256"},
+		"resource":                         baseURL,
+		"authorization_servers":            []string{baseURL},
+	}
+
+	json.NewEncoder(w).Encode(metadata)
+}
+

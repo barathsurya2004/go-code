@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -374,4 +375,23 @@ func TestOAuthHandlers(t *testing.T) {
 			t.Errorf("expected Cache-Control no-store, got %s", rr.Header().Get("Cache-Control"))
 		}
 	})
+
+	t.Run("OAuthMetadataHandler - Success", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil)
+		req.Host = "test.ngrok-free.app"
+		rr := httptest.NewRecorder()
+		OAuthMetadataHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		if rr.Header().Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", rr.Header().Get("Content-Type"))
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "https://test.ngrok-free.app/oauth/authorize") || !strings.Contains(body, "S256") {
+			t.Errorf("unexpected metadata body: %s", body)
+		}
+	})
 }
+
