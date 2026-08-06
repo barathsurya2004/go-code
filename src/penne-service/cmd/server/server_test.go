@@ -16,15 +16,16 @@ import (
 
 type dummyUserRepo struct{}
 
-func (d *dummyUserRepo) CreateUser(u *core.User) error            { return nil }
+func (d *dummyUserRepo) CreateUser(u *core.User) error               { return nil }
 func (d *dummyUserRepo) GetUserByUUID(id string) (*core.User, error) { return nil, nil }
 
 type dummyTokenRepo struct{}
 
-func (d *dummyTokenRepo) CreateToken(t *core.Token) error        { return nil }
-func (d *dummyTokenRepo) DeleteToken(userUUID string) error     { return nil }
-func (d *dummyTokenRepo) GetToken(userUUID string) (*core.Token, error) { return nil, nil }
-func (d *dummyTokenRepo) UpdateToken(t *core.Token) error        { return nil }
+func (d *dummyTokenRepo) CreateToken(t *core.Token) error                           { return nil }
+func (d *dummyTokenRepo) DeleteToken(userUUID string) error                        { return nil }
+func (d *dummyTokenRepo) GetToken(token string) (*core.Token, error)                { return nil, nil }
+func (d *dummyTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) { return nil, nil }
+func (d *dummyTokenRepo) UpdateToken(t *core.Token) error                           { return nil }
 
 type dummyTxnRepo struct{}
 
@@ -36,7 +37,8 @@ func (d *dummyTxnRepo) DeleteTransaction(id string) error                       
 
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
-	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, &dummyTokenRepo{}, log)
+	tokenRepo := &dummyTokenRepo{}
+	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log)
 
 	t.Run("NewMux", func(t *testing.T) {
@@ -47,7 +49,7 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler)
+		app := NewApplication(txnHandler, userHandler, nil, tokenRepo)
 		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler {
 			t.Fatal("expected application initialized with handlers")
 		}
@@ -55,7 +57,7 @@ func TestServer(t *testing.T) {
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler)
+		app := NewApplication(txnHandler, userHandler, nil, tokenRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

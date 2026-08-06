@@ -49,6 +49,7 @@ type Token struct {
 type TokenRepository interface {
 	CreateToken(token *Token) error
 	DeleteToken(userUUID string) error
-	GetToken(userUUID string) (*Token, error)
+	GetToken(token string) (*Token, error)
+	GetTokenWithUserUUID(userUUID string) (*Token, error)
 	UpdateToken(token *Token) error
 }

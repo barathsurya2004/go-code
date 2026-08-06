@@ -51,10 +51,14 @@ func (m *mockTokenRepo) DeleteToken(userUUID string) error {
 	return nil
 }
 
-func (m *mockTokenRepo) GetToken(userUUID string) (*core.Token, error) {
+func (m *mockTokenRepo) GetToken(token string) (*core.Token, error) {
 	if m.getTokenFn != nil {
-		return m.getTokenFn(userUUID)
+		return m.getTokenFn(token)
 	}
+	return nil, nil
+}
+
+func (m *mockTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) {
 	return nil, nil
 }
 

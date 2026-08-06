@@ -72,7 +72,7 @@ func (r *pgTokenRepo) DeleteToken(userUUID string) error {
 	return err
 }
 
-func (r *pgTokenRepo) GetToken(userUUID string) (*core.Token, error) {
+func (r *pgTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) {
 	if userUUID == "" {
 		return nil, errors.New("user UUID is required")
 	}
@@ -108,6 +108,44 @@ func (r *pgTokenRepo) GetToken(userUUID string) (*core.Token, error) {
 	}
 
 	return token, nil
+}
+
+func (r *pgTokenRepo) GetToken(token string) (*core.Token, error) {
+	if token == "" {
+		return nil, errors.New("token is required")
+	}
+
+	query := `
+		SELECT user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at
+		FROM user_tokens
+		WHERE token_uuid = $1
+	`
+	tokenObj := &core.Token{}
+	var expiresAt, lastUsedAt sql.NullTime
+
+	err := r.db.QueryRow(query, token).Scan(
+		&tokenObj.UserUUID,
+		&tokenObj.Token,
+		&tokenObj.Prefix,
+		&tokenObj.Name,
+		pq.Array(&tokenObj.Scope),
+		&expiresAt,
+		&lastUsedAt,
+		&tokenObj.CreatedAt,
+		&tokenObj.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid {
+		tokenObj.ExpiresAt = &expiresAt.Time
+	}
+	if lastUsedAt.Valid {
+		tokenObj.LastUsedAt = &lastUsedAt.Time
+	}
+
+	return tokenObj, nil
 }
 
 func (r *pgTokenRepo) UpdateToken(token *core.Token) error {

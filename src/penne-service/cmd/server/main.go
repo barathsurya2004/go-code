@@ -5,6 +5,7 @@ import (
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/db"
+	mcpserver "github.com/barathsurya2004/go-code/penne-service/internal/server"
 	"github.com/barathsurya2004/go-code/pkg"
 	"go.uber.org/fx"
 )
@@ -14,6 +15,7 @@ func buildApp(opts ...fx.Option) *fx.App {
 		pkg.Module,
 		db.Module,
 		handlers.Module,
+		mcpserver.Module,
 		fx.Provide(
 			NewApplication,
 			NewMux,
