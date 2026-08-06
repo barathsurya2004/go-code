@@ -269,6 +269,9 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
+		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp"` {
+			t.Errorf("expected WWW-Authenticate header, got %s", rr.Header().Get("WWW-Authenticate"))
+		}
 	})
 
 	t.Run("Invalid Authorization Format", func(t *testing.T) {
@@ -280,6 +283,9 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
+		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp"` {
+			t.Errorf("expected WWW-Authenticate header, got %s", rr.Header().Get("WWW-Authenticate"))
+		}
 	})
 
 	t.Run("Invalid Token Value", func(t *testing.T) {
@@ -290,6 +296,9 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
+		}
+		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp", error="invalid_token"` {
+			t.Errorf("expected WWW-Authenticate error header, got %s", rr.Header().Get("WWW-Authenticate"))
 		}
 	})
 
@@ -316,7 +325,7 @@ func TestOAuthHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("OAuthAuthorizeHandler - Success Redirect", func(t *testing.T) {
+	t.Run("OAuthAuthorizeHandler - Success Redirect with State", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/oauth/authorize?redirect_uri=https://gemini.google.com/callback&state=xyz123", nil)
 		rr := httptest.NewRecorder()
 		OAuthAuthorizeHandler(rr, req)
@@ -340,7 +349,17 @@ func TestOAuthHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("OAuthTokenHandler - Success", func(t *testing.T) {
+	t.Run("OAuthTokenHandler - Method Not Allowed (GET)", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/oauth/token", nil)
+		rr := httptest.NewRecorder()
+		OAuthTokenHandler(rr, req)
+
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405 Method Not Allowed, got %d", rr.Code)
+		}
+	})
+
+	t.Run("OAuthTokenHandler - Success POST", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/oauth/token", nil)
 		rr := httptest.NewRecorder()
 		OAuthTokenHandler(rr, req)
@@ -351,6 +370,8 @@ func TestOAuthHandlers(t *testing.T) {
 		if rr.Header().Get("Content-Type") != "application/json" {
 			t.Errorf("expected Content-Type application/json, got %s", rr.Header().Get("Content-Type"))
 		}
+		if rr.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("expected Cache-Control no-store, got %s", rr.Header().Get("Cache-Control"))
+		}
 	})
 }
-

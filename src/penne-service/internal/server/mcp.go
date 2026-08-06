@@ -111,8 +111,8 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 func MCPAuthMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		// 1. ALWAYS allow CORS and OPTIONS requests to pass without a token
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Or specifically "https://gemini.google.com"
+		// 1. ALWAYS allow CORS and OPTIONS requests to pass
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 
@@ -121,9 +121,13 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 			return
 		}
 
-		// 2. Now check for the auth token on actual GET/POST requests
+		// 2. Check for the auth token
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+
+			// THE FIX: Mandatory WWW-Authenticate header for Gemini OAuth recognition
+			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp"`)
+
 			http.Error(w, "Missing Authorization Header", http.StatusUnauthorized)
 			return
 		}
@@ -132,6 +136,7 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 
 		// 3. Validate token
 		if token != "penne_mcp_test_token_123" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp", error="invalid_token"`)
 			http.Error(w, "Invalid Token", http.StatusUnauthorized)
 			return
 		}
@@ -161,9 +166,15 @@ func OAuthAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 func OAuthTokenHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed. OAuth requires POST.", http.StatusMethodNotAllowed)
 		return
 	}
 
