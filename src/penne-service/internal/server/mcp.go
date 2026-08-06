@@ -14,20 +14,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *server.SSEServer {
-	mcpServer := server.NewMCPServer(
-		"Penne MCP",
-		"1.0.0",
-		server.WithToolCapabilities(true),
-	)
-
-	// MCP Tool: Get transactions by user UUID
-	getTxnsTool := mcp.NewTool("get_transactions_by_user",
-		mcp.WithDescription("Get all transactions for a specific user"),
-		mcp.WithString("user_uuid", mcp.Required(), mcp.Description("The UUID of the user")),
-	)
-
-	mcpServer.AddTool(getTxnsTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleGetTransactions(logger *zap.Logger, txnRepo core.TransactionRepository) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args, _ := request.Params.Arguments.(map[string]any)
 		userUUID, ok := args["user_uuid"].(string)
 		if !ok || strings.TrimSpace(userUUID) == "" {
@@ -46,20 +34,11 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
-	})
+	}
+}
 
-	// MCP Tool: Create a new transaction
-	createTxnTool := mcp.NewTool("create_transaction",
-		mcp.WithDescription("Create a new transaction for testing"),
-		mcp.WithString("user_uuid", mcp.Required(), mcp.Description("The UUID of the user")),
-		mcp.WithNumber("amount_e5", mcp.Required(), mcp.Description("Amount scaled by 1e5")),
-		mcp.WithString("country_iso2", mcp.Required(), mcp.Description("2-letter Country ISO code")),
-		mcp.WithString("category", mcp.Required(), mcp.Description("Category of transaction")),
-		mcp.WithString("bank_name", mcp.Required(), mcp.Description("Bank name")),
-		mcp.WithString("txn_type", mcp.Required(), mcp.Description("Transaction type (e.g. credit/debit)")),
-	)
-
-	mcpServer.AddTool(createTxnTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleCreateTransaction(logger *zap.Logger, txnRepo core.TransactionRepository) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args, _ := request.Params.Arguments.(map[string]any)
 		userUUID, _ := args["user_uuid"].(string)
 		countryISO, _ := args["country_iso2"].(string)
@@ -97,7 +76,34 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 
 		data, _ := json.MarshalIndent(txn, "", "  ")
 		return mcp.NewToolResultText("Transaction created successfully:\n" + string(data)), nil
-	})
+	}
+}
+
+func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *server.SSEServer {
+	mcpServer := server.NewMCPServer(
+		"Penne MCP",
+		"1.0.0",
+		server.WithToolCapabilities(true),
+	)
+
+	// MCP Tool: Get transactions by user UUID
+	getTxnsTool := mcp.NewTool("get_transactions_by_user",
+		mcp.WithDescription("Get all transactions for a specific user"),
+		mcp.WithString("user_uuid", mcp.Required(), mcp.Description("The UUID of the user")),
+	)
+	mcpServer.AddTool(getTxnsTool, handleGetTransactions(logger, txnRepo))
+
+	// MCP Tool: Create a new transaction
+	createTxnTool := mcp.NewTool("create_transaction",
+		mcp.WithDescription("Create a new transaction for testing"),
+		mcp.WithString("user_uuid", mcp.Required(), mcp.Description("The UUID of the user")),
+		mcp.WithNumber("amount_e5", mcp.Required(), mcp.Description("Amount scaled by 1e5")),
+		mcp.WithString("country_iso2", mcp.Required(), mcp.Description("2-letter Country ISO code")),
+		mcp.WithString("category", mcp.Required(), mcp.Description("Category of transaction")),
+		mcp.WithString("bank_name", mcp.Required(), mcp.Description("Bank name")),
+		mcp.WithString("txn_type", mcp.Required(), mcp.Description("Transaction type (e.g. credit/debit)")),
+	)
+	mcpServer.AddTool(createTxnTool, handleCreateTransaction(logger, txnRepo))
 
 	sseServer := server.NewSSEServer(mcpServer)
 	return sseServer

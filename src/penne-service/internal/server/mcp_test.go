@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -113,6 +114,116 @@ func TestNewMCPServer(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 		if rr.Code == 0 {
 			t.Error("expected non-zero response code")
+		}
+	})
+}
+
+func TestToolHandlers(t *testing.T) {
+	logger := zap.NewNop()
+	txnRepo := &mockTxnRepo{
+		getTransactionsByUserUUIDFn: func(userUUID string) ([]*core.Transaction, error) {
+			if userUUID == "error-user" {
+				return nil, errors.New("db error")
+			}
+			return []*core.Transaction{{UUID: "txn-1", UserUUID: userUUID}}, nil
+		},
+		createTransactionFn: func(txn *core.Transaction) error {
+			if txn.UserUUID == "error-user" {
+				return errors.New("db error")
+			}
+			return nil
+		},
+	}
+
+	getHandler := handleGetTransactions(logger, txnRepo)
+	createHandler := handleCreateTransaction(logger, txnRepo)
+
+	t.Run("GetTransactions - Missing user_uuid", func(t *testing.T) {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{},
+			},
+		}
+		res, err := getHandler(context.Background(), req)
+		if err != nil || res == nil || !res.IsError {
+			t.Errorf("expected tool error result for missing user_uuid, got %+v", res)
+		}
+	})
+
+	t.Run("GetTransactions - Repo Error", func(t *testing.T) {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"user_uuid": "error-user"},
+			},
+		}
+		res, err := getHandler(context.Background(), req)
+		if err != nil || res == nil || !res.IsError {
+			t.Errorf("expected tool error result for repo error, got %+v", res)
+		}
+	})
+
+	t.Run("GetTransactions - Success", func(t *testing.T) {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"user_uuid": "user-123"},
+			},
+		}
+		res, err := getHandler(context.Background(), req)
+		if err != nil || res == nil || res.IsError {
+			t.Errorf("expected success result, got %+v", res)
+		}
+	})
+
+	t.Run("CreateTransaction - Missing Fields", func(t *testing.T) {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"user_uuid": "user-123"},
+			},
+		}
+		res, err := createHandler(context.Background(), req)
+		if err != nil || res == nil || !res.IsError {
+			t.Errorf("expected tool error result for missing fields, got %+v", res)
+		}
+	})
+
+	t.Run("CreateTransaction - Repo Error", func(t *testing.T) {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{
+					"user_uuid":    "error-user",
+					"amount_e5":    100.0,
+					"country_iso2": "US",
+					"category":     "Food",
+					"bank_name":    "Chase",
+					"txn_type":     "debit",
+				},
+			},
+		}
+		res, err := createHandler(context.Background(), req)
+		if err != nil || res == nil || !res.IsError {
+			t.Errorf("expected tool error result for repo error, got %+v", res)
+		}
+	})
+
+	t.Run("CreateTransaction - Success (float64, int, int64)", func(t *testing.T) {
+		types := []any{float64(100), int(100), int64(100)}
+		for _, amount := range types {
+			req := mcp.CallToolRequest{
+				Params: mcp.CallToolParams{
+					Arguments: map[string]any{
+						"user_uuid":    "user-123",
+						"amount_e5":    amount,
+						"country_iso2": "US",
+						"category":     "Food",
+						"bank_name":    "Chase",
+						"txn_type":     "debit",
+					},
+				},
+			}
+			res, err := createHandler(context.Background(), req)
+			if err != nil || res == nil || res.IsError {
+				t.Errorf("expected success result for amount type %T, got %+v", amount, res)
+			}
 		}
 	})
 }
