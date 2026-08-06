@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -129,8 +130,9 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		validUUID := "123e4567-e89b-12d3-a456-426614174000"
+		now := time.Now()
 		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow(validUUID, float64(500), "user-1", "US", "Food", "Chase", "debit", "2026-01-01", "2026-01-01")
+			AddRow(validUUID, float64(500), "user-1", "US", "Food", "Chase", "debit", now, now)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE uuid = \\$1").
 			WithArgs(validUUID).
@@ -155,6 +157,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 
 	repo := NewPgTransactionRowsRepo(db)
 	userUUID := "123e4567-e89b-12d3-a456-426614174000"
+	now := time.Now()
 
 	t.Run("Empty User UUID", func(t *testing.T) {
 		_, err := repo.GetTransactionsByUserUUID("")
@@ -183,7 +186,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 
 	t.Run("Scan Error", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow("txn-1", "invalid_number", "user-1", "US", "Food", "Chase", "debit", "2026-01-01", "2026-01-01")
+			AddRow("txn-1", "invalid_number", "user-1", "US", "Food", "Chase", "debit", now, now)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
 			WithArgs(userUUID).
@@ -197,7 +200,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 
 	t.Run("Rows Err", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow("txn-1", float64(100), "user-1", "US", "Food", "Chase", "debit", "2026-01-01", "2026-01-01").
+			AddRow("txn-1", float64(100), "user-1", "US", "Food", "Chase", "debit", now, now).
 			RowError(0, errors.New("row error"))
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
@@ -212,8 +215,8 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow("123e4567-e89b-12d3-a456-426614174001", float64(100), userUUID, "US", "Food", "Chase", "debit", "2026-01-01", "2026-01-01").
-			AddRow("123e4567-e89b-12d3-a456-426614174002", float64(200), userUUID, "US", "Tech", "Citi", "credit", "2026-01-02", "2026-01-02")
+			AddRow("123e4567-e89b-12d3-a456-426614174001", float64(100), userUUID, "US", "Food", "Chase", "debit", now, now).
+			AddRow("123e4567-e89b-12d3-a456-426614174002", float64(200), userUUID, "US", "Tech", "Citi", "credit", now, now)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
 			WithArgs(userUUID).

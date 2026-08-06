@@ -8,4 +8,5 @@ var Module = fx.Module(
 	fx.Provide(NewDb),
 	fx.Provide(NewPgTransactionRowsRepo),
 	fx.Provide(NewPgUserRepo),
+	fx.Provide(NewTokenRepo),
 )

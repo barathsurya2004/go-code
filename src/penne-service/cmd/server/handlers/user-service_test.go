@@ -30,10 +30,46 @@ func (m *mockUserRepo) GetUserByUUID(uuid string) (*core.User, error) {
 	return nil, nil
 }
 
+type mockTokenRepo struct {
+	createTokenFn func(token *core.Token) error
+	deleteTokenFn func(userUUID string) error
+	getTokenFn    func(userUUID string) (*core.Token, error)
+	updateTokenFn func(token *core.Token) error
+}
+
+func (m *mockTokenRepo) CreateToken(token *core.Token) error {
+	if m.createTokenFn != nil {
+		return m.createTokenFn(token)
+	}
+	return nil
+}
+
+func (m *mockTokenRepo) DeleteToken(userUUID string) error {
+	if m.deleteTokenFn != nil {
+		return m.deleteTokenFn(userUUID)
+	}
+	return nil
+}
+
+func (m *mockTokenRepo) GetToken(userUUID string) (*core.Token, error) {
+	if m.getTokenFn != nil {
+		return m.getTokenFn(userUUID)
+	}
+	return nil, nil
+}
+
+func (m *mockTokenRepo) UpdateToken(token *core.Token) error {
+	if m.updateTokenFn != nil {
+		return m.updateTokenFn(token)
+	}
+	return nil
+}
+
 func TestUserServiceHandler(t *testing.T) {
 	logger := zap.NewNop()
-	repo := &mockUserRepo{}
-	handler := NewUserServiceHandler(repo, logger)
+	userRepo := &mockUserRepo{}
+	tokenRepo := &mockTokenRepo{}
+	handler := NewUserServiceHandler(userRepo, tokenRepo, logger)
 
 	t.Run("GetUserByUUID - Missing UUID", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/user", nil)
@@ -47,7 +83,7 @@ func TestUserServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetUserByUUID - Repo Error", func(t *testing.T) {
-		repo.getUserByUUIDFn = func(uuid string) (*core.User, error) {
+		userRepo.getUserByUUIDFn = func(uuid string) (*core.User, error) {
 			return nil, errors.New("user not found")
 		}
 		req := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
@@ -65,7 +101,7 @@ func TestUserServiceHandler(t *testing.T) {
 			UUID: "123e4567-e89b-12d3-a456-426614174000",
 			Name: "John Doe",
 		}
-		repo.getUserByUUIDFn = func(uuid string) (*core.User, error) {
+		userRepo.getUserByUUIDFn = func(uuid string) (*core.User, error) {
 			return expectedUser, nil
 		}
 		req := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
@@ -89,8 +125,8 @@ func TestUserServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CreateUser - Repo Error", func(t *testing.T) {
-		repo.createUserFn = func(user *core.User) error {
+	t.Run("CreateUser - User Repo Error", func(t *testing.T) {
+		userRepo.createUserFn = func(user *core.User) error {
 			return errors.New("db error")
 		}
 		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Jane Doe"}`))
@@ -103,8 +139,28 @@ func TestUserServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateUser - Token Repo Error", func(t *testing.T) {
+		userRepo.createUserFn = func(user *core.User) error {
+			return nil
+		}
+		tokenRepo.createTokenFn = func(token *core.Token) error {
+			return errors.New("failed to create token")
+		}
+		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Jane Doe"}`))
+		rr := httptest.NewRecorder()
+
+		handler.CreateUser(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
 	t.Run("CreateUser - Success", func(t *testing.T) {
-		repo.createUserFn = func(user *core.User) error {
+		userRepo.createUserFn = func(user *core.User) error {
+			return nil
+		}
+		tokenRepo.createTokenFn = func(token *core.Token) error {
 			return nil
 		}
 		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Jane Doe"}`))

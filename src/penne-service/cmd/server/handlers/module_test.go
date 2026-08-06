@@ -17,6 +17,7 @@ func TestModule(t *testing.T) {
 		fx.Provide(
 			func() core.TransactionRepository { return &mockTxnRepo{} },
 			func() core.UserRepository { return &mockUserRepo{} },
+			func() core.TokenRepository { return &mockTokenRepo{} },
 			zap.NewNop,
 		),
 		fx.Populate(&txnHandler, &userHandler),

@@ -101,7 +101,7 @@ func TestPgUserRepo_GetUserByUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		validUUID := "123e4567-e89b-12d3-a456-426614174000"
-		now := time.Now().Format(time.RFC3339)
+		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"uuid", "name", "created_at", "updated_at"}).
 			AddRow(validUUID, "Alice", now, now)

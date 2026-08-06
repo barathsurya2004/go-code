@@ -19,6 +19,13 @@ type dummyUserRepo struct{}
 func (d *dummyUserRepo) CreateUser(u *core.User) error            { return nil }
 func (d *dummyUserRepo) GetUserByUUID(id string) (*core.User, error) { return nil, nil }
 
+type dummyTokenRepo struct{}
+
+func (d *dummyTokenRepo) CreateToken(t *core.Token) error        { return nil }
+func (d *dummyTokenRepo) DeleteToken(userUUID string) error     { return nil }
+func (d *dummyTokenRepo) GetToken(userUUID string) (*core.Token, error) { return nil, nil }
+func (d *dummyTokenRepo) UpdateToken(t *core.Token) error        { return nil }
+
 type dummyTxnRepo struct{}
 
 func (d *dummyTxnRepo) CreateTransaction(t *core.Transaction) error                   { return nil }
@@ -29,7 +36,7 @@ func (d *dummyTxnRepo) DeleteTransaction(id string) error                       
 
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
-	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, log)
+	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, &dummyTokenRepo{}, log)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log)
 
 	t.Run("NewMux", func(t *testing.T) {

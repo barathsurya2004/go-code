@@ -3,20 +3,24 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type UserServiceHandler struct {
-	userRepo core.UserRepository
-	Logger   *zap.Logger
+	userRepo      core.UserRepository
+	userTokenRepo core.TokenRepository
+	Logger        *zap.Logger
 }
 
-func NewUserServiceHandler(userRepo core.UserRepository, logger *zap.Logger) *UserServiceHandler {
+func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.TokenRepository, logger *zap.Logger) *UserServiceHandler {
 	return &UserServiceHandler{
-		userRepo: userRepo,
-		Logger:   logger,
+		userRepo:      userRepo,
+		userTokenRepo: userTokenRepo,
+		Logger:        logger,
 	}
 }
 
@@ -36,9 +40,8 @@ func (h *UserServiceHandler) GetUserByUUID(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
 	w.WriteHeader(http.StatusOK)
-
+	json.NewEncoder(w).Encode(user)
 }
 
 func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -49,9 +52,30 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if user.UUID == "" {
+		user.UUID = uuid.NewString()
+	}
+
 	if err := h.userRepo.CreateUser(&user); err != nil {
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		h.Logger.Error("Failed to create user", zap.Error(err))
+		return
+	}
+
+	now := time.Now()
+	var token core.Token
+	token.UserUUID = user.UUID
+	token.Prefix = "mcp_"
+	token.Name = "default"
+	token.Scope = []string{"all"}
+	token.ExpiresAt = nil
+	token.LastUsedAt = nil
+	token.CreatedAt = now
+	token.UpdatedAt = now
+
+	if err := h.userTokenRepo.CreateToken(&token); err != nil {
+		http.Error(w, "Failed to create token", http.StatusInternalServerError)
+		h.Logger.Error("Failed to create token", zap.Error(err))
 		return
 	}
 

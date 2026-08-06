@@ -1,15 +1,17 @@
 package core
 
+import "time"
+
 type Transaction struct {
-	UUID       string  `json:"uuid"`
-	AmountE5   float64 `json:"amount_e5"`
-	UserUUID   string  `json:"user_uuid"`
-	CountryISO string  `json:"country_iso2"`
-	Category   string  `json:"category"`
-	BankName   string  `json:"bank_name"`
-	Type       string  `json:"txn_type"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
+	UUID       string    `json:"uuid"`
+	AmountE5   float64   `json:"amount_e5"`
+	UserUUID   string    `json:"user_uuid"`
+	CountryISO string    `json:"country_iso2"`
+	Category   string    `json:"category"`
+	BankName   string    `json:"bank_name"`
+	Type       string    `json:"txn_type"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type TransactionRepository interface {
@@ -21,13 +23,32 @@ type TransactionRepository interface {
 }
 
 type User struct {
-	UUID      string `json:"uuid"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	UUID      string    `json:"uuid"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type UserRepository interface {
 	CreateUser(user *User) error
 	GetUserByUUID(uuid string) (*User, error)
+}
+
+type Token struct {
+	UserUUID   string     `json:"user_uuid"`
+	Token      string     `json:"token"`
+	Prefix     string     `json:"prefix"`
+	Name       string     `json:"name"`
+	Scope      []string   `json:"scope"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+type TokenRepository interface {
+	CreateToken(token *Token) error
+	DeleteToken(userUUID string) error
+	GetToken(userUUID string) (*Token, error)
+	UpdateToken(token *Token) error
 }
