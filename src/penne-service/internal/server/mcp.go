@@ -181,7 +181,8 @@ func OAuthTokenHandler(w http.ResponseWriter, r *http.Request) {
 	response := `{
 		"access_token": "penne_mcp_test_token_123",
 		"token_type": "Bearer",
-		"expires_in": 31536000
+		"expires_in": 31536000,
+		"refresh_token": "penne_mcp_test_refresh_123"
 	}`
 
 	w.Write([]byte(response))
