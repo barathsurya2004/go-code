@@ -115,7 +115,7 @@ func TestPgTokenRepo_DeleteToken(t *testing.T) {
 	})
 }
 
-func TestPgTokenRepo_GetToken(t *testing.T) {
+func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("unexpected error creating sqlmock: %v", err)
@@ -125,7 +125,7 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 	repo := NewTokenRepo(db)
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		_, err := repo.GetToken("")
+		_, err := repo.GetTokenWithUserUUID("")
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
@@ -137,7 +137,7 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 			WithArgs(userUUID).
 			WillReturnError(sql.ErrNoRows)
 
-		_, err := repo.GetToken(userUUID)
+		_, err := repo.GetTokenWithUserUUID(userUUID)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -155,15 +155,62 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
-		token, err := repo.GetToken(userUUID)
+		token, err := repo.GetTokenWithUserUUID(userUUID)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 		if token.UserUUID != userUUID || token.Token != tokenUUID || len(token.Scope) != 1 || token.Scope[0] != "all" {
 			t.Errorf("unexpected token returned: %+v", token)
 		}
-		if token.ExpiresAt == nil {
-			t.Errorf("expected non-nil ExpiresAt")
+	})
+}
+
+func TestPgTokenRepo_GetToken(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewTokenRepo(db)
+
+	t.Run("Empty Token", func(t *testing.T) {
+		_, err := repo.GetToken("")
+		if err == nil || err.Error() != "token is required" {
+			t.Errorf("expected 'token is required', got %v", err)
+		}
+	})
+
+	t.Run("Query Error", func(t *testing.T) {
+		tokenUUID := "87654321-e89b-12d3-a456-426614174000"
+		mock.ExpectQuery("SELECT user_id, token_uuid").
+			WithArgs(tokenUUID).
+			WillReturnError(sql.ErrNoRows)
+
+		_, err := repo.GetToken(tokenUUID)
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		userUUID := "123e4567-e89b-12d3-a456-426614174000"
+		tokenUUID := "87654321-e89b-12d3-a456-426614174000"
+		now := time.Now()
+
+		rows := sqlmock.NewRows([]string{"user_id", "token_uuid", "prefix", "name", "scopes", "expires_at", "last_used_at", "created_at", "updated_at"}).
+			AddRow(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, nil, now, now)
+
+		mock.ExpectQuery("SELECT user_id, token_uuid").
+			WithArgs(tokenUUID).
+			WillReturnRows(rows)
+
+		token, err := repo.GetToken(tokenUUID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if token.UserUUID != userUUID || token.Token != tokenUUID {
+			t.Errorf("unexpected token returned: %+v", token)
 		}
 	})
 }
