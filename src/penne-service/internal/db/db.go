@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	"os"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"go.uber.org/fx"
 )
@@ -13,8 +15,14 @@ type Config struct {
 }
 
 func CreateConfig() Config {
+	_ = godotenv.Load()
+	_ = godotenv.Load("src/penne-service/.env")
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://postgres:postgres@localhost:5432/penne_app?sslmode=disable"
+	}
 	return Config{
-		DSN: "postgres://postgres:postgres@localhost:5432/penne_app?sslmode=disable",
+		DSN: dsn,
 	}
 }
 
