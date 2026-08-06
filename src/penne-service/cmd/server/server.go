@@ -57,6 +57,10 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
 
+	// Public OAuth Endpoints
+	mux.HandleFunc("/oauth/authorize", mcpserver.OAuthAuthorizeHandler)
+	mux.HandleFunc("/oauth/token", mcpserver.OAuthTokenHandler)
+
 	// mcp endpoints protected by auth middleware
 	if app.mcpServer != nil {
 		mux.Handle("/sse", mcpserver.MCPAuthMiddleWare(app.mcpServer))

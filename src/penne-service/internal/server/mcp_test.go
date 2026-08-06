@@ -304,3 +304,53 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 		}
 	})
 }
+
+func TestOAuthHandlers(t *testing.T) {
+	t.Run("OAuthAuthorizeHandler - Missing redirect_uri", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/oauth/authorize", nil)
+		rr := httptest.NewRecorder()
+		OAuthAuthorizeHandler(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("OAuthAuthorizeHandler - Success Redirect", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/oauth/authorize?redirect_uri=https://gemini.google.com/callback&state=xyz123", nil)
+		rr := httptest.NewRecorder()
+		OAuthAuthorizeHandler(rr, req)
+
+		if rr.Code != http.StatusFound {
+			t.Errorf("expected 302 redirect, got %d", rr.Code)
+		}
+		location := rr.Header().Get("Location")
+		if location != "https://gemini.google.com/callback?code=fake_auth_code_999&state=xyz123" {
+			t.Errorf("unexpected redirect URL: %s", location)
+		}
+	})
+
+	t.Run("OAuthTokenHandler - OPTIONS Preflight", func(t *testing.T) {
+		req := httptest.NewRequest("OPTIONS", "/oauth/token", nil)
+		rr := httptest.NewRecorder()
+		OAuthTokenHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 for OPTIONS, got %d", rr.Code)
+		}
+	})
+
+	t.Run("OAuthTokenHandler - Success", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/oauth/token", nil)
+		rr := httptest.NewRecorder()
+		OAuthTokenHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		if rr.Header().Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", rr.Header().Get("Content-Type"))
+		}
+	})
+}
+

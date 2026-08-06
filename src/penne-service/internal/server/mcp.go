@@ -140,3 +140,38 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// OAuthAuthorizeHandler handles Gemini's OAuth authorization redirect.
+func OAuthAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
+	redirectURI := r.URL.Query().Get("redirect_uri")
+	state := r.URL.Query().Get("state")
+
+	if redirectURI == "" {
+		http.Error(w, "missing redirect_uri", http.StatusBadRequest)
+		return
+	}
+
+	fakeAuthCode := "fake_auth_code_999"
+
+	redirectURL := fmt.Sprintf("%s?code=%s&state=%s", redirectURI, fakeAuthCode, state)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+// OAuthTokenHandler returns the static Bearer token for OAuth token exchanges.
+func OAuthTokenHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	response := `{
+		"access_token": "penne_mcp_test_token_123",
+		"token_type": "Bearer",
+		"expires_in": 31536000
+	}`
+
+	w.Write([]byte(response))
+}
