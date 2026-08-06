@@ -59,9 +59,8 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 
 	// mcp endpoints protected by auth middleware
 	if app.mcpServer != nil {
-		mcpAuth := mcpserver.MCPAuthMiddleWare(app.tokenRepo)
-		mux.Handle("/sse", mcpAuth(app.mcpServer))
-		mux.Handle("/message", mcpAuth(app.mcpServer))
+		mux.Handle("/sse", mcpserver.MCPAuthMiddleWare(app.mcpServer))
+		mux.Handle("/message", mcpserver.MCPAuthMiddleWare(app.mcpServer))
 	}
 }
 

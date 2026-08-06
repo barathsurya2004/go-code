@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -109,53 +108,35 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 	return sseServer
 }
 
-func MCPAuthMiddleWare(repo core.TokenRepository) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "missing authorization header", http.StatusUnauthorized)
-				return
-			}
+func MCPAuthMiddleWare(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, "invalid authorization header", http.StatusUnauthorized)
-				return
-			}
-			token := parts[1]
+		// 1. ALWAYS allow CORS and OPTIONS requests to pass without a token
+		w.Header().Set("Access-Control-Allow-Origin", "*") // Or specifically "https://gemini.google.com"
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 
-			if token == "" {
-				http.Error(w, "user token is missing", http.StatusUnauthorized)
-				return
-			}
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 
-			if strings.HasPrefix(token, "mcp_") {
-				mcpToken := strings.TrimPrefix(token, "mcp_")
+		// 2. Now check for the auth token on actual GET/POST requests
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "Missing Authorization Header", http.StatusUnauthorized)
+			return
+		}
 
-				tokenObj, err := repo.GetToken(mcpToken)
-				if err != nil {
-					http.Error(w, "invalid token", http.StatusUnauthorized)
-					return
-				}
-				if tokenObj.ExpiresAt != nil && tokenObj.ExpiresAt.Before(time.Now()) {
-					http.Error(w, "token has expired", http.StatusUnauthorized)
-					return
-				}
+		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-				if tokenObj.Scope != nil {
-					// match scopes
-				}
+		// 3. Validate token
+		if token != "penne_mcp_test_token_123" {
+			http.Error(w, "Invalid Token", http.StatusUnauthorized)
+			return
+		}
 
-				ctx := context.WithValue(r.Context(), "user_id", tokenObj)
-
-				next.ServeHTTP(w, r.WithContext(ctx))
-
-			} else {
-				http.Error(w, "invalid token type", http.StatusUnauthorized)
-				return
-			}
-
-		})
-	}
+		ctx := context.WithValue(r.Context(), "user_id", "user_barath_123")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
