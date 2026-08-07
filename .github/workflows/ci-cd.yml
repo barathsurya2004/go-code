@@ -51,7 +51,7 @@ jobs:
             src/penne-service/coverage.out
 
   deploy:
-    name: Deploy to Tablet
+    name: Deploy to Server
     needs: test
     environment: Production
     # ONLY deploy when code is pushed to main. Do not deploy on Pull Requests.
