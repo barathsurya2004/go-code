@@ -43,7 +43,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		log.Info("Health check endpoint hit(deployment checkup)")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte("OK(deployment check)"))
 	})
 
 	// user endpoints
