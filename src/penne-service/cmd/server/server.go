@@ -57,16 +57,22 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
 
-	// Public OAuth Endpoints
-	metadataPaths := []string{
+	// Public RFC 8414 OAuth 2.0 Authorization Server Metadata
+	authServerMetadataPaths := []string{
 		"/.well-known/oauth-authorization-server",
-		"/.well-known/oauth-protected-resource",
-		"/.well-known/oauth-protected-resource/sse",
 		"/.well-known/openid-configuration",
 	}
-
-	for _, path := range metadataPaths {
+	for _, path := range authServerMetadataPaths {
 		mux.HandleFunc(path, mcpserver.OAuthMetadataHandler)
+	}
+
+	// Public RFC 9728 OAuth 2.0 Protected Resource Metadata
+	protectedResourceMetadataPaths := []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/sse",
+	}
+	for _, path := range protectedResourceMetadataPaths {
+		mux.HandleFunc(path, mcpserver.ProtectedResourceMetadataHandler)
 	}
 
 	mux.HandleFunc("/oauth/authorize", mcpserver.OAuthAuthorizeHandler)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -104,8 +105,51 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 	)
 	mcpServer.AddTool(createTxnTool, handleCreateTransaction(logger, txnRepo))
 
-	sseServer := server.NewSSEServer(mcpServer)
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("MCP_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = "https://yak-crisp-vulture.ngrok-free.app"
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	sseServer := server.NewSSEServer(mcpServer,
+		server.WithSSEProtectedResourceMetadata(server.ProtectedResourceMetadataConfig{
+			Resource:               baseURL,
+			AuthorizationServers:   []string{baseURL},
+			ScopesSupported:        []string{"mcp:read", "mcp:write"},
+			BearerMethodsSupported: []string{"header"},
+		}),
+		server.WithSSECORS(
+			server.WithCORSAllowedOrigins("*"),
+			server.WithCORSAllowCredentials(),
+			server.WithCORSMaxAge(300),
+		),
+		server.WithSSEDisableLocalhostProtection(true),
+	)
 	return sseServer
+}
+
+func getBaseURL(r *http.Request) string {
+	if envURL := os.Getenv("BASE_URL"); envURL != "" {
+		return strings.TrimSuffix(envURL, "/")
+	}
+	if envURL := os.Getenv("MCP_BASE_URL"); envURL != "" {
+		return strings.TrimSuffix(envURL, "/")
+	}
+
+	scheme := "https"
+	if r.TLS == nil {
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else if strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1") || strings.HasPrefix(r.Host, "[::1]") {
+			scheme = "http"
+		} else {
+			scheme = "https"
+		}
+	}
+	return fmt.Sprintf("%s://%s", scheme, r.Host)
 }
 
 func MCPAuthMiddleWare(next http.Handler) http.Handler {
@@ -113,20 +157,24 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 
 		// 1. ALWAYS allow CORS and OPTIONS requests to pass
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Last-Event-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
+		baseURL := getBaseURL(r)
+		resourceMetadataURL := baseURL + "/.well-known/oauth-protected-resource"
+
 		// 2. Check for the auth token
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
 
-			// THE FIX: Mandatory WWW-Authenticate header for Gemini OAuth recognition
-			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp"`)
+			// Mandatory WWW-Authenticate header for Gemini OAuth recognition & RFC 9728 discovery
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="mcp", resource_metadata="%s"`, resourceMetadataURL))
 
 			http.Error(w, "Missing Authorization Header", http.StatusUnauthorized)
 			return
@@ -136,7 +184,7 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 
 		// 3. Validate token
 		if token != "penne_mcp_test_token_123" {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp", error="invalid_token"`)
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="mcp", error="invalid_token", resource_metadata="%s"`, resourceMetadataURL))
 			http.Error(w, "Invalid Token", http.StatusUnauthorized)
 			return
 		}
@@ -148,6 +196,12 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 
 // OAuthAuthorizeHandler handles Gemini's OAuth authorization redirect.
 func OAuthAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	redirectURI := r.URL.Query().Get("redirect_uri")
 	state := r.URL.Query().Get("state")
 
@@ -188,24 +242,45 @@ func OAuthTokenHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(response))
 }
 
-// OAuthMetadataHandler returns RFC 8414 / RFC 9728 metadata for Gemini auto-discovery.
+// OAuthMetadataHandler returns RFC 8414 OAuth 2.0 Authorization Server Metadata for Gemini auto-discovery.
 func OAuthMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 
-	baseURL := "https://" + r.Host
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	baseURL := getBaseURL(r)
 
 	metadata := map[string]any{
-		"issuer":                           baseURL,
-		"authorization_endpoint":           baseURL + "/oauth/authorize",
-		"token_endpoint":                   baseURL + "/oauth/token",
-		"response_types_supported":         []string{"code"},
-		"grant_types_supported":            []string{"authorization_code"},
-		"code_challenge_methods_supported": []string{"S256"},
-		"resource":                         baseURL,
-		"authorization_servers":            []string{baseURL},
+		"issuer":                                baseURL,
+		"authorization_endpoint":                baseURL + "/oauth/authorize",
+		"token_endpoint":                        baseURL + "/oauth/token",
+		"response_types_supported":              []string{"code"},
+		"grant_types_supported":                 []string{"authorization_code"},
+		"code_challenge_methods_supported":      []string{"S256"},
+		"scopes_supported":                      []string{"mcp:read", "mcp:write"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"},
 	}
 
 	json.NewEncoder(w).Encode(metadata)
 }
+
+// ProtectedResourceMetadataHandler handles RFC 9728 OAuth Protected Resource Metadata requests.
+func ProtectedResourceMetadataHandler(w http.ResponseWriter, r *http.Request) {
+	baseURL := getBaseURL(r)
+
+	handler := server.NewProtectedResourceMetadataHandler(server.ProtectedResourceMetadataConfig{
+		Resource:               baseURL,
+		AuthorizationServers:   []string{baseURL},
+		ScopesSupported:        []string{"mcp:read", "mcp:write"},
+		BearerMethodsSupported: []string{"header"},
+	})
+
+	handler.ServeHTTP(w, r)
+}
+
 

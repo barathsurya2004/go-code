@@ -264,19 +264,22 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 
 	t.Run("Missing Authorization Header", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/sse", nil)
+		req.Host = "test.example.com"
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
-		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp"` {
-			t.Errorf("expected WWW-Authenticate header, got %s", rr.Header().Get("WWW-Authenticate"))
+		expectedWWWAuth := `Bearer realm="mcp", resource_metadata="https://test.example.com/.well-known/oauth-protected-resource"`
+		if rr.Header().Get("WWW-Authenticate") != expectedWWWAuth {
+			t.Errorf("expected WWW-Authenticate header %q, got %q", expectedWWWAuth, rr.Header().Get("WWW-Authenticate"))
 		}
 	})
 
 	t.Run("Invalid Authorization Format", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/sse", nil)
+		req.Host = "test.example.com"
 		req.Header.Set("Authorization", "Basic xyz")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -284,13 +287,15 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
-		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp"` {
-			t.Errorf("expected WWW-Authenticate header, got %s", rr.Header().Get("WWW-Authenticate"))
+		expectedWWWAuth := `Bearer realm="mcp", resource_metadata="https://test.example.com/.well-known/oauth-protected-resource"`
+		if rr.Header().Get("WWW-Authenticate") != expectedWWWAuth {
+			t.Errorf("expected WWW-Authenticate header %q, got %q", expectedWWWAuth, rr.Header().Get("WWW-Authenticate"))
 		}
 	})
 
 	t.Run("Invalid Token Value", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/sse", nil)
+		req.Host = "test.example.com"
 		req.Header.Set("Authorization", "Bearer invalid_token_123")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -298,8 +303,9 @@ func TestMCPAuthMiddleWare(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
-		if rr.Header().Get("WWW-Authenticate") != `Bearer realm="mcp", error="invalid_token"` {
-			t.Errorf("expected WWW-Authenticate error header, got %s", rr.Header().Get("WWW-Authenticate"))
+		expectedWWWAuth := `Bearer realm="mcp", error="invalid_token", resource_metadata="https://test.example.com/.well-known/oauth-protected-resource"`
+		if rr.Header().Get("WWW-Authenticate") != expectedWWWAuth {
+			t.Errorf("expected WWW-Authenticate error header %q, got %q", expectedWWWAuth, rr.Header().Get("WWW-Authenticate"))
 		}
 	})
 
@@ -376,7 +382,7 @@ func TestOAuthHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("OAuthMetadataHandler - Success", func(t *testing.T) {
+	t.Run("OAuthMetadataHandler - RFC 8414 Success", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil)
 		req.Host = "test.ngrok-free.app"
 		rr := httptest.NewRecorder()
@@ -393,5 +399,24 @@ func TestOAuthHandlers(t *testing.T) {
 			t.Errorf("unexpected metadata body: %s", body)
 		}
 	})
+
+	t.Run("ProtectedResourceMetadataHandler - RFC 9728 Success", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+		req.Host = "test.ngrok-free.app"
+		rr := httptest.NewRecorder()
+		ProtectedResourceMetadataHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		if !strings.Contains(rr.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("expected Content-Type application/json, got %s", rr.Header().Get("Content-Type"))
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, `"resource":"https://test.ngrok-free.app"`) || !strings.Contains(body, "authorization_servers") {
+			t.Errorf("unexpected protected resource metadata body: %s", body)
+		}
+	})
 }
+
 
