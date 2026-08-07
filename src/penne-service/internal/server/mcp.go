@@ -158,8 +158,9 @@ func MCPAuthMiddleWare(next http.Handler) http.Handler {
 		// 1. ALWAYS allow CORS and OPTIONS requests to pass
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Last-Event-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Last-Event-ID, ngrok-skip-browser-warning")
 		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+		w.Header().Set("ngrok-skip-browser-warning", "true")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -282,5 +283,3 @@ func ProtectedResourceMetadataHandler(w http.ResponseWriter, r *http.Request) {
 
 	handler.ServeHTTP(w, r)
 }
-
-
