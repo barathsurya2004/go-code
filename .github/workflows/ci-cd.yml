@@ -72,6 +72,6 @@ jobs:
           host: ${{ secrets.TABLET_IP }}
           username: ${{ secrets.TABLET_USER }}
           key: ${{ secrets.TABLET_SSH_KEY }}
-          port: 8022
+          port: 22
           script: |
             ~/deploy.sh penne-service
