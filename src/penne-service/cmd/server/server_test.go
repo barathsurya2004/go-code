@@ -68,8 +68,8 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected status 200, got %d", rr.Code)
 		}
 		body, _ := io.ReadAll(rr.Body)
-		if string(body) != "OK" {
-			t.Errorf("expected body 'OK', got '%s'", string(body))
+		if string(body) != "OK(deployment check)" {
+			t.Errorf("expected body 'OK(deployment check)', got '%s'", string(body))
 		}
 
 		// Test user and transaction route dispatching
