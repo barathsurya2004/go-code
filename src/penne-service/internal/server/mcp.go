@@ -79,7 +79,7 @@ func handleCreateTransaction(logger *zap.Logger, txnRepo core.TransactionReposit
 	}
 }
 
-func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *server.SSEServer {
+func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *server.StreamableHTTPServer {
 	mcpServer := server.NewMCPServer(
 		"Penne MCP",
 		"1.0.0",
@@ -114,21 +114,21 @@ func NewMCPServer(logger *zap.Logger, txnRepo core.TransactionRepository) *serve
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	sseServer := server.NewSSEServer(mcpServer,
-		server.WithSSEProtectedResourceMetadata(server.ProtectedResourceMetadataConfig{
+	streamableServer := server.NewStreamableHTTPServer(mcpServer,
+		server.WithProtectedResourceMetadata(server.ProtectedResourceMetadataConfig{
 			Resource:               baseURL,
 			AuthorizationServers:   []string{baseURL},
 			ScopesSupported:        []string{"mcp:read", "mcp:write"},
 			BearerMethodsSupported: []string{"header"},
 		}),
-		server.WithSSECORS(
+		server.WithStreamableHTTPCORS(
 			server.WithCORSAllowedOrigins("*"),
 			server.WithCORSAllowCredentials(),
 			server.WithCORSMaxAge(300),
 		),
-		server.WithSSEDisableLocalhostProtection(true),
+		server.WithDisableLocalhostProtection(true),
 	)
-	return sseServer
+	return streamableServer
 }
 
 func getBaseURL(r *http.Request) string {

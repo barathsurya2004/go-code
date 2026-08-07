@@ -94,7 +94,7 @@ func TestNewMCPServer(t *testing.T) {
 
 	srv := NewMCPServer(logger, txnRepo)
 	if srv == nil {
-		t.Fatal("expected non-nil SSEServer")
+		t.Fatal("expected non-nil StreamableHTTPServer")
 	}
 
 	t.Run("ServeHTTP SSE request with canceled context", func(t *testing.T) {
@@ -108,12 +108,13 @@ func TestNewMCPServer(t *testing.T) {
 		}
 	})
 
-	t.Run("ServeHTTP Message request - empty body", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/message?sessionId=test", bytes.NewBufferString("{}"))
+	t.Run("ServeHTTP POST request handling", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/sse", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"ping","id":1}`))
+		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
-		if rr.Code == 0 {
-			t.Error("expected non-zero response code")
+		if rr.Code == http.StatusMethodNotAllowed {
+			t.Errorf("POST request should be allowed on StreamableHTTPServer, got %d", rr.Code)
 		}
 	})
 }

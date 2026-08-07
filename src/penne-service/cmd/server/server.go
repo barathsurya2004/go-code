@@ -8,7 +8,7 @@ import (
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	mcpserver "github.com/barathsurya2004/go-code/penne-service/internal/server"
 	"github.com/gorilla/mux"
-	mcp "github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -21,14 +21,14 @@ func NewMux() *mux.Router {
 type Application struct {
 	transactionHandler *handlers.TransactionServiceHandler
 	userHandler        *handlers.UserServiceHandler
-	mcpServer          *mcp.SSEServer
+	mcpServer          *server.StreamableHTTPServer
 	tokenRepo          core.TokenRepository
 }
 
 func NewApplication(
 	transactionHandler *handlers.TransactionServiceHandler,
 	userHandler *handlers.UserServiceHandler,
-	mcpServer *mcp.SSEServer,
+	mcpServer *server.StreamableHTTPServer,
 	tokenRepo core.TokenRepository,
 ) *Application {
 	return &Application{
@@ -80,8 +80,10 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 
 	// mcp endpoints protected by auth middleware
 	if app.mcpServer != nil {
-		mux.Handle("/sse", mcpserver.MCPAuthMiddleWare(app.mcpServer))
-		mux.Handle("/message", mcpserver.MCPAuthMiddleWare(app.mcpServer))
+		mcpHandler := mcpserver.MCPAuthMiddleWare(app.mcpServer)
+		mux.Handle("/sse", mcpHandler)
+		mux.Handle("/mcp", mcpHandler)
+		mux.Handle("/message", mcpHandler)
 	}
 }
 
