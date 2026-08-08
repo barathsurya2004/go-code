@@ -77,6 +77,7 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		h.Logger.Error("Failed to begin transaction", zap.Error(err))
 		return
 	}
+	defer tx.Rollback()
 
 	userUUID, err := h.userRepo.CreateUser(&user, tx)
 	if err != nil {

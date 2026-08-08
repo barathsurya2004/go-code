@@ -22,60 +22,56 @@ func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository {
 
 func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO transactionrows (amount_e5, user_uuid, country_iso2, category, bank_name, txn_type)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING uuid
+		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
 	`
 
-	//validation checks
-
+	// validation checks
 	if txn.AmountE5 < 0 {
 		return uuid.Nil, errors.New("transaction amount cannot be negative")
 	}
 	if txn.CountryISO == "" {
 		return uuid.Nil, errors.New("transaction country ISO cannot be empty")
 	}
-	if txn.Category == "" {
-		return uuid.Nil, errors.New("transaction category cannot be empty")
-	}
 	if txn.Type == "" {
 		return uuid.Nil, errors.New("transaction type cannot be empty")
 	}
-	var txnUUID uuid.UUID
+	var txnID uuid.UUID
 	if err := Tx.QueryRow(query,
+		txn.UserID,
+		txn.EnvelopeID,
 		txn.AmountE5,
-		txn.UserUUID,
 		txn.CountryISO,
-		txn.Category,
 		txn.BankName,
 		txn.Type,
-	).Scan(&txnUUID); err != nil {
+	).Scan(&txnID); err != nil {
 		return uuid.Nil, err
 	}
-	return txnUUID, nil
+	txn.ID = txnID
+	return txnID, nil
 }
 
 func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
 	query := `
-		SELECT uuid, amount_e5, user_uuid, country_iso2, category, bank_name, txn_type, created_at, updated_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type, created_at
 		FROM transactionrows
-		WHERE uuid = $1
+		WHERE id = $1
 	`
-	//validation checks
+	// validation checks
 	if id == uuid.Nil {
 		return nil, errors.New("transaction UUID is required")
 	}
 
 	txn := &core.Transaction{}
 	err := r.db.QueryRowContext(context.Background(), query, id).Scan(
-		&txn.UUID,
+		&txn.ID,
+		&txn.UserID,
+		&txn.EnvelopeID,
 		&txn.AmountE5,
-		&txn.UserUUID,
 		&txn.CountryISO,
-		&txn.Category,
 		&txn.BankName,
 		&txn.Type,
 		&txn.CreatedAt,
-		&txn.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -83,18 +79,18 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 	return txn, nil
 }
 
-func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userUUID uuid.UUID) ([]*core.Transaction, error) {
+func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*core.Transaction, error) {
 	query := `
-		SELECT uuid, amount_e5, user_uuid, country_iso2, category, bank_name, txn_type, created_at, updated_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type, created_at
 		FROM transactionrows
-		WHERE user_uuid = $1
+		WHERE user_id = $1
 	`
-	//validation checks
-	if userUUID == uuid.Nil {
+	// validation checks
+	if userID == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}
 
-	rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+	rows, err := r.db.QueryContext(context.Background(), query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,15 +100,14 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userUUID uuid.UUID) ([
 	for rows.Next() {
 		txn := &core.Transaction{}
 		if err := rows.Scan(
-			&txn.UUID,
+			&txn.ID,
+			&txn.UserID,
+			&txn.EnvelopeID,
 			&txn.AmountE5,
-			&txn.UserUUID,
 			&txn.CountryISO,
-			&txn.Category,
 			&txn.BankName,
 			&txn.Type,
 			&txn.CreatedAt,
-			&txn.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -129,12 +124,12 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userUUID uuid.UUID) ([
 func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction) error {
 	query := `
 		UPDATE transactionrows
-		SET amount_e5 = $1, country_iso2 = $2, category = $3, bank_name = $4, txn_type = $5, updated_at = NOW()
-		WHERE uuid = $6
+		SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, bank_name = $4, txn_type = $5
+		WHERE id = $6
 	`
 
-	//validation checks
-	if txn.UUID == uuid.Nil {
+	// validation checks
+	if txn.ID == uuid.Nil {
 		return errors.New("transaction UUID is required")
 	}
 	if txn.AmountE5 < 0 {
@@ -143,20 +138,17 @@ func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction) error {
 	if txn.CountryISO == "" {
 		return errors.New("transaction country ISO cannot be empty")
 	}
-	if txn.Category == "" {
-		return errors.New("transaction category cannot be empty")
-	}
 	if txn.Type == "" {
 		return errors.New("transaction type cannot be empty")
 	}
 
 	_, err := r.db.ExecContext(context.Background(), query,
+		txn.EnvelopeID,
 		txn.AmountE5,
 		txn.CountryISO,
-		txn.Category,
 		txn.BankName,
 		txn.Type,
-		txn.UUID,
+		txn.ID,
 	)
 	return err
 }
@@ -164,9 +156,9 @@ func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction) error {
 func (r *pgTransactionRowsRepo) DeleteTransaction(id uuid.UUID) error {
 	query := `
 		DELETE FROM transactionrows
-		WHERE uuid = $1
+		WHERE id = $1
 	`
-	//validation checks
+	// validation checks
 	if id == uuid.Nil {
 		return errors.New("transaction UUID is required")
 	}

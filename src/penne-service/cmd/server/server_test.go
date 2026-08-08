@@ -114,7 +114,7 @@ func TestServer(t *testing.T) {
 	defer mockDB.Close()
 
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
-	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log)
+	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log, mockDB)
 	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log)
 
 	t.Run("NewMux", func(t *testing.T) {
@@ -169,6 +169,8 @@ func TestServer(t *testing.T) {
 		}
 
 		// Test transaction endpoints
+		mock.ExpectBegin()
+		mock.ExpectCommit()
 		reqTxnPost := httptest.NewRequest("POST", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"amount_e5":100}`))))
 		reqTxnPost.Header.Set("Authorization", validAuthHeader)
 		rrTxnPost := httptest.NewRecorder()

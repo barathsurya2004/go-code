@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -12,12 +13,14 @@ import (
 type TransactionServiceHandler struct {
 	transactionRepo core.TransactionRepository
 	logger          *zap.Logger
+	db              *sql.DB
 }
 
-func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, logger *zap.Logger) *TransactionServiceHandler {
+func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, logger *zap.Logger, db *sql.DB) *TransactionServiceHandler {
 	return &TransactionServiceHandler{
 		transactionRepo: transactionRepo,
 		logger:          logger,
+		db:              db,
 	}
 }
 
@@ -35,13 +38,28 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 		return
 	}
 
-	txn.UserUUID = userUUID
+	txn.UserID = userUUID
 
-	if _, err := h.transactionRepo.CreateTransaction(&txn, nil); err != nil {
+	tx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+		h.logger.Error("Failed to begin transaction", zap.Error(err))
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := h.transactionRepo.CreateTransaction(&txn, tx); err != nil {
 		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to create transaction", zap.Error(err))
 		return
 	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		h.logger.Error("Failed to commit transaction", zap.Error(err))
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(txn)
 }
@@ -103,7 +121,7 @@ func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *
 		h.logger.Error("Failed to decode transaction payload", zap.Error(err))
 		return
 	}
-	txn.UserUUID = userUUID
+	txn.UserID = userUUID
 	if err := h.transactionRepo.UpdateTransaction(&txn); err != nil {
 		http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to update transaction", zap.Error(err))

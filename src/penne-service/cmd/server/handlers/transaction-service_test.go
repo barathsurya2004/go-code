@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -60,7 +61,13 @@ func (m *mockTxnRepo) DeleteTransaction(id uuid.UUID) error {
 func TestTransactionServiceHandler(t *testing.T) {
 	logger := zap.NewNop()
 	repo := &mockTxnRepo{}
-	handler := NewTransactionServiceHandler(repo, logger)
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	handler := NewTransactionServiceHandler(repo, logger, db)
 	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateTransaction - Invalid Payload", func(t *testing.T) {
@@ -86,7 +93,22 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateTransaction - BeginTx Error", func(t *testing.T) {
+		mock.ExpectBegin().WillReturnError(errors.New("begin tx failed"))
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
 	t.Run("CreateTransaction - Repo Error", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectRollback()
 		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
 			return uuid.Nil, errors.New("db error")
 		}
@@ -101,7 +123,26 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateTransaction - Commit Error", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
+			return uuid.New(), nil
+		}
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
 	t.Run("CreateTransaction - Success", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectCommit()
 		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
 			return uuid.New(), nil
 		}
@@ -143,7 +184,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 	t.Run("GetTransactionByUUID - Success", func(t *testing.T) {
 		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
-			return &core.Transaction{UUID: id, AmountE5: 500}, nil
+			return &core.Transaction{ID: id, AmountE5: 500}, nil
 		}
 		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()
@@ -182,7 +223,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 	t.Run("GetTransactionsByUserUUID - Success", func(t *testing.T) {
 		repo.getTransactionsByUserUUIDFn = func(userUUID uuid.UUID) ([]*core.Transaction, error) {
-			return []*core.Transaction{{UUID: uuid.New(), UserUUID: userUUID}}, nil
+			return []*core.Transaction{{ID: uuid.New(), UserID: userUUID}}, nil
 		}
 		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()

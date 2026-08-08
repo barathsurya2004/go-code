@@ -22,7 +22,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Negative Amount", func(t *testing.T) {
-		txn := &core.Transaction{AmountE5: -100, CountryISO: "US", Category: "Food", Type: "debit"}
+		txn := &core.Transaction{AmountE5: -100, CountryISO: "US", Type: "debit"}
 		_, err := repo.CreateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction amount cannot be negative" {
 			t.Errorf("expected negative amount error, got %v", err)
@@ -30,23 +30,15 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 	})
 
 	t.Run("Empty CountryISO", func(t *testing.T) {
-		txn := &core.Transaction{AmountE5: 100, CountryISO: "", Category: "Food", Type: "debit"}
+		txn := &core.Transaction{AmountE5: 100, CountryISO: "", Type: "debit"}
 		_, err := repo.CreateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction country ISO cannot be empty" {
 			t.Errorf("expected empty country ISO error, got %v", err)
 		}
 	})
 
-	t.Run("Empty Category", func(t *testing.T) {
-		txn := &core.Transaction{AmountE5: 100, CountryISO: "US", Category: "", Type: "debit"}
-		_, err := repo.CreateTransaction(txn, nil)
-		if err == nil || err.Error() != "transaction category cannot be empty" {
-			t.Errorf("expected empty category error, got %v", err)
-		}
-	})
-
 	t.Run("Empty Type", func(t *testing.T) {
-		txn := &core.Transaction{AmountE5: 100, CountryISO: "US", Category: "Food", Type: ""}
+		txn := &core.Transaction{AmountE5: 100, CountryISO: "US", Type: ""}
 		_, err := repo.CreateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction type cannot be empty" {
 			t.Errorf("expected empty type error, got %v", err)
@@ -56,16 +48,15 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 	t.Run("Exec Error", func(t *testing.T) {
 		txn := &core.Transaction{
 			AmountE5:   100,
-			UserUUID:   userUUID,
+			UserID:     userUUID,
 			CountryISO: "US",
-			Category:   "Food",
 			BankName:   "Chase",
 			Type:       "debit",
 		}
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.AmountE5, txn.UserUUID, txn.CountryISO, txn.Category, txn.BankName, txn.Type).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type).
 			WillReturnError(errors.New("db error"))
 
 		_, err := repo.CreateTransaction(txn, tx)
@@ -78,17 +69,16 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 		genUUID := uuid.New()
 		txn := &core.Transaction{
 			AmountE5:   100,
-			UserUUID:   userUUID,
+			UserID:     userUUID,
 			CountryISO: "US",
-			Category:   "Food",
 			BankName:   "Chase",
 			Type:       "debit",
 		}
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.AmountE5, txn.UserUUID, txn.CountryISO, txn.Category, txn.BankName, txn.Type).
-			WillReturnRows(sqlmock.NewRows([]string{"uuid"}).AddRow(genUUID))
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, tx)
 		if err != nil {
@@ -119,7 +109,7 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE id = \\$1").
 			WithArgs(validUUID).
 			WillReturnError(sql.ErrNoRows)
 
@@ -131,10 +121,10 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
-		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow(validUUID, float64(500), userUUID, "US", "Food", "Chase", "debit", now, now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+			AddRow(validUUID, userUUID, nil, int64(500), "US", "Chase", "debit", now)
 
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE id = \\$1").
 			WithArgs(validUUID).
 			WillReturnRows(rows)
 
@@ -142,7 +132,7 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if txn.UUID != validUUID || txn.AmountE5 != 500 {
+		if txn.ID != validUUID || txn.AmountE5 != 500 {
 			t.Errorf("unexpected transaction: %+v", txn)
 		}
 	})
@@ -167,7 +157,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnError(errors.New("query failed"))
 
@@ -178,10 +168,10 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Scan Error", func(t *testing.T) {
-		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow("invalid_uuid", "invalid_number", userUUID, "US", "Food", "Chase", "debit", now, now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+			AddRow("invalid_uuid", userUUID, nil, "invalid_number", "US", "Chase", "debit", now)
 
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -192,11 +182,11 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Rows Err", func(t *testing.T) {
-		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow(uuid.New(), float64(100), userUUID, "US", "Food", "Chase", "debit", now, now).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+			AddRow(uuid.New(), userUUID, nil, int64(100), "US", "Chase", "debit", now).
 			RowError(0, errors.New("row error"))
 
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -209,11 +199,11 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		txn1UUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
 		txn2UUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174002")
-		rows := sqlmock.NewRows([]string{"uuid", "amount_e5", "user_uuid", "country_iso2", "category", "bank_name", "txn_type", "created_at", "updated_at"}).
-			AddRow(txn1UUID, float64(100), userUUID, "US", "Food", "Chase", "debit", now, now).
-			AddRow(txn2UUID, float64(200), userUUID, "US", "Tech", "Citi", "credit", now, now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+			AddRow(txn1UUID, userUUID, nil, int64(100), "US", "Chase", "debit", now).
+			AddRow(txn2UUID, userUUID, nil, int64(200), "US", "Citi", "credit", now)
 
-		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_uuid = \\$1").
+		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -238,7 +228,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UUID", func(t *testing.T) {
-		txn := &core.Transaction{UUID: uuid.Nil}
+		txn := &core.Transaction{ID: uuid.Nil}
 		err := repo.UpdateTransaction(txn)
 		if err == nil || err.Error() != "transaction UUID is required" {
 			t.Errorf("expected empty UUID error, got %v", err)
@@ -246,7 +236,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Negative Amount", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: -5}
+		txn := &core.Transaction{ID: validUUID, AmountE5: -5}
 		err := repo.UpdateTransaction(txn)
 		if err == nil || err.Error() != "transaction amount cannot be negative" {
 			t.Errorf("expected negative amount error, got %v", err)
@@ -254,23 +244,15 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Empty CountryISO", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: 5, CountryISO: ""}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: ""}
 		err := repo.UpdateTransaction(txn)
 		if err == nil || err.Error() != "transaction country ISO cannot be empty" {
 			t.Errorf("expected empty country ISO error, got %v", err)
 		}
 	})
 
-	t.Run("Empty Category", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: 5, CountryISO: "US", Category: ""}
-		err := repo.UpdateTransaction(txn)
-		if err == nil || err.Error() != "transaction category cannot be empty" {
-			t.Errorf("expected empty category error, got %v", err)
-		}
-	})
-
 	t.Run("Empty Type", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: 5, CountryISO: "US", Category: "Food", Type: ""}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", Type: ""}
 		err := repo.UpdateTransaction(txn)
 		if err == nil || err.Error() != "transaction type cannot be empty" {
 			t.Errorf("expected empty type error, got %v", err)
@@ -278,9 +260,9 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Exec Error", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: 5, CountryISO: "US", Category: "Food", BankName: "Chase", Type: "debit"}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", BankName: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.AmountE5, txn.CountryISO, txn.Category, txn.BankName, txn.Type, txn.UUID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.ID).
 			WillReturnError(errors.New("update failed"))
 
 		err := repo.UpdateTransaction(txn)
@@ -290,9 +272,9 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		txn := &core.Transaction{UUID: validUUID, AmountE5: 5, CountryISO: "US", Category: "Food", BankName: "Chase", Type: "debit"}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", BankName: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.AmountE5, txn.CountryISO, txn.Category, txn.BankName, txn.Type, txn.UUID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.ID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		err := repo.UpdateTransaction(txn)
@@ -320,7 +302,7 @@ func TestPgTransactionRowsRepo_DeleteTransaction(t *testing.T) {
 	})
 
 	t.Run("Exec Error", func(t *testing.T) {
-		mock.ExpectExec("DELETE FROM transactionrows WHERE uuid = \\$1").
+		mock.ExpectExec("DELETE FROM transactionrows WHERE id = \\$1").
 			WithArgs(validUUID).
 			WillReturnError(errors.New("delete failed"))
 
@@ -331,7 +313,7 @@ func TestPgTransactionRowsRepo_DeleteTransaction(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		mock.ExpectExec("DELETE FROM transactionrows WHERE uuid = \\$1").
+		mock.ExpectExec("DELETE FROM transactionrows WHERE id = \\$1").
 			WithArgs(validUUID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 

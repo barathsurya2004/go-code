@@ -16,16 +16,16 @@ func TestModelsJSON(t *testing.T) {
 	tokenUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174002")
 
 	t.Run("Transaction JSON", func(t *testing.T) {
+		envID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174003")
 		txn := Transaction{
-			UUID:       txnUUID,
+			ID:         txnUUID,
+			UserID:     userUUID,
+			EnvelopeID: &envID,
 			AmountE5:   500,
-			UserUUID:   userUUID,
 			CountryISO: "US",
-			Category:   "Food",
 			BankName:   "Chase",
 			Type:       "debit",
 			CreatedAt:  now,
-			UpdatedAt:  now,
 		}
 
 		data, err := json.Marshal(txn)
@@ -38,7 +38,7 @@ func TestModelsJSON(t *testing.T) {
 			t.Fatalf("failed to unmarshal Transaction: %v", err)
 		}
 
-		if decoded.UUID != txn.UUID || decoded.AmountE5 != txn.AmountE5 || decoded.UserUUID != txn.UserUUID {
+		if decoded.ID != txn.ID || decoded.AmountE5 != txn.AmountE5 || decoded.UserID != txn.UserID {
 			t.Errorf("unmarshalled transaction mismatch: got %+v, want %+v", decoded, txn)
 		}
 	})
