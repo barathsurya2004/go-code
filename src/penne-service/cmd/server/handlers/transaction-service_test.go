@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -58,9 +59,22 @@ func TestTransactionServiceHandler(t *testing.T) {
 	logger := zap.NewNop()
 	repo := &mockTxnRepo{}
 	handler := NewTransactionServiceHandler(repo, logger)
+	validUUID := "123e4567-e89b-12d3-a456-426614174000"
 
 	t.Run("CreateTransaction - Invalid Payload", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString("invalid json"))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("CreateTransaction - Missing User UUID", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		rr := httptest.NewRecorder()
 
 		handler.CreateTransaction(rr, req)
@@ -75,6 +89,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			return errors.New("db error")
 		}
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.CreateTransaction(rr, req)
@@ -89,6 +104,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			return nil
 		}
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.CreateTransaction(rr, req)
@@ -98,8 +114,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("GetTransactionByUUID - Missing UUID", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/transaction", nil)
+	t.Run("GetTransactionByUUID - Missing or Invalid UUID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/transaction?txn_uuid=invalid", nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionByUUID(rr, req)
@@ -113,7 +129,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.getTransactionByUUIDFn = func(uuid string) (*core.Transaction, error) {
 			return nil, errors.New("not found")
 		}
-		req := httptest.NewRequest("GET", "/transaction?uuid=txn-123", nil)
+		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID, nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionByUUID(rr, req)
@@ -127,7 +143,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.getTransactionByUUIDFn = func(uuid string) (*core.Transaction, error) {
 			return &core.Transaction{UUID: uuid, AmountE5: 500}, nil
 		}
-		req := httptest.NewRequest("GET", "/transaction?uuid=txn-123", nil)
+		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID, nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionByUUID(rr, req)
@@ -152,7 +168,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.getTransactionsByUserUUIDFn = func(userUUID string) ([]*core.Transaction, error) {
 			return nil, errors.New("db error")
 		}
-		req := httptest.NewRequest("GET", "/transactions?user_uuid=user-123", nil)
+		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID, nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionsByUserUUID(rr, req)
@@ -166,7 +182,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.getTransactionsByUserUUIDFn = func(userUUID string) ([]*core.Transaction, error) {
 			return []*core.Transaction{{UUID: "txn-1", UserUUID: userUUID}}, nil
 		}
-		req := httptest.NewRequest("GET", "/transactions?user_uuid=user-123", nil)
+		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID, nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionsByUserUUID(rr, req)
@@ -178,6 +194,18 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 	t.Run("UpdateTransaction - Invalid Payload", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString("invalid json"))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.UpdateTransaction(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("UpdateTransaction - Missing Context User UUID", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
 		rr := httptest.NewRecorder()
 
 		handler.UpdateTransaction(rr, req)
@@ -191,7 +219,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
 			return errors.New("update failed")
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"txn-123"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.UpdateTransaction(rr, req)
@@ -205,7 +234,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
 			return nil
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"txn-123"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.UpdateTransaction(rr, req)
@@ -215,9 +245,13 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("DeleteTransaction - Missing UUID", func(t *testing.T) {
+	t.Run("DeleteTransaction - Missing or Invalid UUID", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/transaction", nil)
 		rr := httptest.NewRecorder()
+
+		// Expect 400 Bad Request when context user_uuid is missing or invalid
+		ctx := context.WithValue(req.Context(), "user_uuid", "invalid-uuid")
+		req = req.WithContext(ctx)
 
 		handler.DeleteTransaction(rr, req)
 
@@ -230,7 +264,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.deleteTransactionFn = func(uuid string) error {
 			return errors.New("delete failed")
 		}
-		req := httptest.NewRequest("DELETE", "/transaction?uuid=txn-123", nil)
+		req := httptest.NewRequest("DELETE", "/transaction", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.DeleteTransaction(rr, req)
@@ -244,7 +279,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.deleteTransactionFn = func(uuid string) error {
 			return nil
 		}
-		req := httptest.NewRequest("DELETE", "/transaction?uuid=txn-123", nil)
+		req := httptest.NewRequest("DELETE", "/transaction", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.DeleteTransaction(rr, req)

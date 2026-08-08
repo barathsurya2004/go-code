@@ -111,7 +111,7 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected status 201 for POST /transaction route, got %d", rrTxnPost.Code)
 		}
 
-		reqTxnGet := httptest.NewRequest("GET", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		reqTxnGet := httptest.NewRequest("GET", "/transaction?txn_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
 		reqTxnGet.Header.Set("Authorization", "Bearer valid")
 		rrTxnGet := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnGet, reqTxnGet)
