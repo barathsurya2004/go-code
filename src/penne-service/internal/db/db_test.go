@@ -47,4 +47,23 @@ func TestNewDb(t *testing.T) {
 	if err := lc.Stop(ctx); err != nil {
 		t.Errorf("unexpected error on Stop: %v", err)
 	}
+
+	t.Run("Ping Connection Error OnStart", func(t *testing.T) {
+		lcErr := fxtest.NewLifecycle(t)
+		cfgErr := Config{DSN: "postgres://user:pass@invalid-host-name-1234:5432/dbname?sslmode=disable"}
+		database, err := NewDb(lcErr, cfgErr)
+		if err != nil {
+			t.Fatalf("unexpected error from NewDb: %v", err)
+		}
+		if database == nil {
+			t.Fatal("expected non-nil *sql.DB")
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		if err := lcErr.Start(ctx); err == nil {
+			t.Error("expected ping error on Start with invalid host")
+		}
+	})
 }

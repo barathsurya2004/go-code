@@ -38,7 +38,7 @@ func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.Enve
 		WHERE id = $1
 	`
 
-	if err := uuid.Validate(id.String()); err != nil {
+	if id == uuid.Nil || uuid.Validate(id.String()) != nil {
 		return nil, errors.New("envelope group ID is invalid")
 	}
 
@@ -108,7 +108,7 @@ func (r *EnvelopeGroupRepository) UpdateEnvelopeGroup(envelopeGroup *core.Envelo
 		return errors.New("envelope group name is required")
 	}
 
-	if err := uuid.Validate(envelopeGroup.ID.String()); err != nil {
+	if envelopeGroup.ID == uuid.Nil || uuid.Validate(envelopeGroup.ID.String()) != nil {
 		return errors.New("envelope group ID is invalid")
 	}
 
@@ -122,7 +122,7 @@ func (r *EnvelopeGroupRepository) DeleteEnvelopeGroup(id uuid.UUID) error {
 		WHERE id = $1
 	`
 
-	if err := uuid.Validate(id.String()); err != nil {
+	if id == uuid.Nil || uuid.Validate(id.String()) != nil {
 		return errors.New("envelope group ID is invalid")
 	}
 

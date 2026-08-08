@@ -74,6 +74,13 @@ func TestEnvelopeGroupRepository_GetEnvelopeGroupByID(t *testing.T) {
 	repo := NewEnvelopeGroupRepository(db)
 	validID := uuid.New()
 
+	t.Run("Invalid ID", func(t *testing.T) {
+		_, err := repo.GetEnvelopeGroupByID(uuid.Nil)
+		if err == nil || err.Error() != "envelope group ID is invalid" {
+			t.Errorf("expected 'envelope group ID is invalid', got %v", err)
+		}
+	})
+
 	t.Run("Query Error", func(t *testing.T) {
 		mock.ExpectQuery("SELECT id, user_uuid, name, is_system").
 			WithArgs(validID).
@@ -204,6 +211,17 @@ func TestEnvelopeGroupRepository_UpdateEnvelopeGroup(t *testing.T) {
 		}
 	})
 
+	t.Run("Invalid ID", func(t *testing.T) {
+		group := &core.EnvelopeGroup{
+			ID:   uuid.Nil,
+			Name: "Valid Name",
+		}
+		err := repo.UpdateEnvelopeGroup(group)
+		if err == nil || err.Error() != "envelope group ID is invalid" {
+			t.Errorf("expected 'envelope group ID is invalid', got %v", err)
+		}
+	})
+
 	t.Run("Exec Error", func(t *testing.T) {
 		group := &core.EnvelopeGroup{
 			ID:       uuid.New(),
@@ -248,6 +266,13 @@ func TestEnvelopeGroupRepository_DeleteEnvelopeGroup(t *testing.T) {
 
 	repo := NewEnvelopeGroupRepository(db)
 	validID := uuid.New()
+
+	t.Run("Invalid ID", func(t *testing.T) {
+		err := repo.DeleteEnvelopeGroup(uuid.Nil)
+		if err == nil || err.Error() != "envelope group ID is invalid" {
+			t.Errorf("expected 'envelope group ID is invalid', got %v", err)
+		}
+	})
 
 	t.Run("Exec Error", func(t *testing.T) {
 		mock.ExpectExec("DELETE FROM envelope_groups").
