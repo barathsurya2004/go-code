@@ -13,6 +13,11 @@ import (
 type Config struct {
 	DSN string
 }
+type DBTX interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
 
 func CreateConfig() Config {
 	_ = godotenv.Load()

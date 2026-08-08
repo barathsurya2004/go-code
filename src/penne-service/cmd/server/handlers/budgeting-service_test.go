@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,18 +17,18 @@ import (
 )
 
 type mockEnvelopeGroupRepo struct {
-	createFn    func(group *core.EnvelopeGroup) error
+	createFn    func(group *core.EnvelopeGroup) (uuid.UUID, error)
 	getByIDFn   func(id uuid.UUID) (*core.EnvelopeGroup, error)
-	getByUserFn func(userUUID string) ([]*core.EnvelopeGroup, error)
+	getByUserFn func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error)
 	updateFn    func(group *core.EnvelopeGroup) error
 	deleteFn    func(id uuid.UUID) error
 }
 
-func (m *mockEnvelopeGroupRepo) CreateEnvelopeGroup(group *core.EnvelopeGroup) error {
+func (m *mockEnvelopeGroupRepo) CreateEnvelopeGroup(group *core.EnvelopeGroup, Tx *sql.Tx) (uuid.UUID, error) {
 	if m.createFn != nil {
 		return m.createFn(group)
 	}
-	return nil
+	return uuid.Nil, nil
 }
 
 func (m *mockEnvelopeGroupRepo) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) {
@@ -37,7 +38,7 @@ func (m *mockEnvelopeGroupRepo) GetEnvelopeGroupByID(id uuid.UUID) (*core.Envelo
 	return nil, nil
 }
 
-func (m *mockEnvelopeGroupRepo) GetEnvelopeGroupsByUserUUID(userUUID string) ([]*core.EnvelopeGroup, error) {
+func (m *mockEnvelopeGroupRepo) GetEnvelopeGroupsByUserUUID(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 	if m.getByUserFn != nil {
 		return m.getByUserFn(userUUID)
 	}
@@ -59,18 +60,18 @@ func (m *mockEnvelopeGroupRepo) DeleteEnvelopeGroup(id uuid.UUID) error {
 }
 
 type mockEnvelopeRepo struct {
-	createFn    func(env *core.Envelope) error
+	createFn    func(env *core.Envelope) (uuid.UUID, error)
 	getByIDFn   func(id uuid.UUID) (*core.Envelope, error)
-	getByUserFn func(userUUID string) ([]*core.Envelope, error)
+	getByUserFn func(userUUID uuid.UUID) ([]*core.Envelope, error)
 	updateFn    func(env *core.Envelope) error
 	deleteFn    func(id uuid.UUID) error
 }
 
-func (m *mockEnvelopeRepo) CreateEnvelope(env *core.Envelope) error {
+func (m *mockEnvelopeRepo) CreateEnvelope(env *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
 	if m.createFn != nil {
 		return m.createFn(env)
 	}
-	return nil
+	return uuid.Nil, nil
 }
 
 func (m *mockEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) {
@@ -80,7 +81,7 @@ func (m *mockEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error)
 	return nil, nil
 }
 
-func (m *mockEnvelopeRepo) GetEnvelopesByUserUUID(userUUID string) ([]*core.Envelope, error) {
+func (m *mockEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.Envelope, error) {
 	if m.getByUserFn != nil {
 		return m.getByUserFn(userUUID)
 	}
@@ -102,19 +103,19 @@ func (m *mockEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error {
 }
 
 type mockAllocationRepo struct {
-	createFn          func(alloc *core.Allocation) error
+	createFn          func(alloc *core.Allocation) (uuid.UUID, error)
 	getByIDFn         func(id uuid.UUID) (*core.Allocation, error)
 	getByEnvelopeFn   func(envelopeID uuid.UUID) ([]*core.Allocation, error)
-	getActiveByUserFn func(userUUID string, targetDate time.Time) ([]*core.Allocation, error)
+	getActiveByUserFn func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error)
 	updateFn          func(alloc *core.Allocation) error
 	deleteFn          func(id uuid.UUID) error
 }
 
-func (m *mockAllocationRepo) CreateAllocation(alloc *core.Allocation) error {
+func (m *mockAllocationRepo) CreateAllocation(alloc *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
 	if m.createFn != nil {
 		return m.createFn(alloc)
 	}
-	return nil
+	return uuid.Nil, nil
 }
 
 func (m *mockAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) {
@@ -131,7 +132,7 @@ func (m *mockAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([
 	return nil, nil
 }
 
-func (m *mockAllocationRepo) GetActiveAllocationsByUserUUID(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+func (m *mockAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
 	if m.getActiveByUserFn != nil {
 		return m.getActiveByUserFn(userUUID, targetDate)
 	}
@@ -159,11 +160,11 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	allocRepo := &mockAllocationRepo{}
 
 	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
-	validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
+	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelopeGroup - Success", func(t *testing.T) {
-		groupRepo.createFn = func(group *core.EnvelopeGroup) error {
-			return nil
+		groupRepo.createFn = func(group *core.EnvelopeGroup) (uuid.UUID, error) {
+			return uuid.New(), nil
 		}
 		body, _ := json.Marshal(core.EnvelopeGroup{Name: "Bills"})
 		req := httptest.NewRequest("POST", "/envelope-group", bytes.NewBuffer(body))
@@ -198,8 +199,8 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("CreateEnvelopeGroup - Repo Error", func(t *testing.T) {
-		groupRepo.createFn = func(group *core.EnvelopeGroup) error {
-			return errors.New("db error")
+		groupRepo.createFn = func(group *core.EnvelopeGroup) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("db error")
 		}
 		body, _ := json.Marshal(core.EnvelopeGroup{Name: "Bills"})
 		req := httptest.NewRequest("POST", "/envelope-group", bytes.NewBuffer(body))
@@ -253,7 +254,7 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopeGroupsByUserUUID - Success", func(t *testing.T) {
-		groupRepo.getByUserFn = func(userUUID string) ([]*core.EnvelopeGroup, error) {
+		groupRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 			return []*core.EnvelopeGroup{{Name: "Bills"}}, nil
 		}
 
@@ -268,11 +269,11 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopeGroupsByUserUUID - Query Param Fallback", func(t *testing.T) {
-		groupRepo.getByUserFn = func(userUUID string) ([]*core.EnvelopeGroup, error) {
+		groupRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 			return []*core.EnvelopeGroup{{Name: "Bills"}}, nil
 		}
 
-		req := httptest.NewRequest("GET", "/envelope-groups?user_uuid="+validUserUUID, nil)
+		req := httptest.NewRequest("GET", "/envelope-groups?user_uuid="+validUserUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetEnvelopeGroupsByUserUUID(rr, req)
@@ -292,7 +293,7 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopeGroupsByUserUUID - Repo Error", func(t *testing.T) {
-		groupRepo.getByUserFn = func(userUUID string) ([]*core.EnvelopeGroup, error) {
+		groupRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 			return nil, errors.New("db error")
 		}
 
@@ -407,11 +408,11 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	allocRepo := &mockAllocationRepo{}
 
 	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
-	validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
+	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelope - Success", func(t *testing.T) {
-		envRepo.createFn = func(env *core.Envelope) error {
-			return nil
+		envRepo.createFn = func(env *core.Envelope) (uuid.UUID, error) {
+			return uuid.New(), nil
 		}
 
 		body, _ := json.Marshal(core.Envelope{TargetAmountE5: 10000})
@@ -447,8 +448,8 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	})
 
 	t.Run("CreateEnvelope - Repo Error", func(t *testing.T) {
-		envRepo.createFn = func(env *core.Envelope) error {
-			return errors.New("create error")
+		envRepo.createFn = func(env *core.Envelope) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("create error")
 		}
 
 		body, _ := json.Marshal(core.Envelope{TargetAmountE5: 10000})
@@ -503,7 +504,7 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopesByUserUUID - Success", func(t *testing.T) {
-		envRepo.getByUserFn = func(userUUID string) ([]*core.Envelope, error) {
+		envRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.Envelope, error) {
 			return []*core.Envelope{{UserUUID: userUUID}}, nil
 		}
 
@@ -518,11 +519,11 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopesByUserUUID - Query Param Fallback", func(t *testing.T) {
-		envRepo.getByUserFn = func(userUUID string) ([]*core.Envelope, error) {
+		envRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.Envelope, error) {
 			return []*core.Envelope{{UserUUID: userUUID}}, nil
 		}
 
-		req := httptest.NewRequest("GET", "/envelopes?user_uuid="+validUserUUID, nil)
+		req := httptest.NewRequest("GET", "/envelopes?user_uuid="+validUserUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetEnvelopesByUserUUID(rr, req)
@@ -542,7 +543,7 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	})
 
 	t.Run("GetEnvelopesByUserUUID - Repo Error", func(t *testing.T) {
-		envRepo.getByUserFn = func(userUUID string) ([]*core.Envelope, error) {
+		envRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.Envelope, error) {
 			return nil, errors.New("db error")
 		}
 
@@ -659,8 +660,8 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
 
 	t.Run("CreateAllocation - Success", func(t *testing.T) {
-		allocRepo.createFn = func(alloc *core.Allocation) error {
-			return nil
+		allocRepo.createFn = func(alloc *core.Allocation) (uuid.UUID, error) {
+			return uuid.New(), nil
 		}
 
 		body, _ := json.Marshal(core.Allocation{AllocatedAmountE5: 50000})
@@ -684,8 +685,8 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	})
 
 	t.Run("CreateAllocation - Repo Error", func(t *testing.T) {
-		allocRepo.createFn = func(alloc *core.Allocation) error {
-			return errors.New("create error")
+		allocRepo.createFn = func(alloc *core.Allocation) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("create error")
 		}
 
 		body, _ := json.Marshal(core.Allocation{AllocatedAmountE5: 50000})
@@ -859,8 +860,8 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	})
 
 	t.Run("GetActiveAllocationsByUserUUID - Success", func(t *testing.T) {
-		validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
-		allocRepo.getActiveByUserFn = func(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
 			return []*core.Allocation{{AllocatedAmountE5: 100000}}, nil
 		}
 
@@ -885,12 +886,12 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	})
 
 	t.Run("GetActiveAllocationsByUserUUID - Query Param Fallback", func(t *testing.T) {
-		validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
-		allocRepo.getActiveByUserFn = func(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
 			return []*core.Allocation{{AllocatedAmountE5: 100000}}, nil
 		}
 
-		req := httptest.NewRequest("GET", "/allocations/active?user_uuid="+validUserUUID, nil)
+		req := httptest.NewRequest("GET", "/allocations/active?user_uuid="+validUserUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetActiveAllocationsByUserUUID(rr, req)
@@ -900,8 +901,8 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	})
 
 	t.Run("GetActiveAllocationsByUserUUID - Repo Error", func(t *testing.T) {
-		validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
-		allocRepo.getActiveByUserFn = func(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
 			return nil, errors.New("db error")
 		}
 

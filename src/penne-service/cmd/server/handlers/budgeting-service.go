@@ -33,10 +33,29 @@ func NewBudgetingServiceHandler(
 
 // Envelope Group Handlers
 
+func getUserUUIDFromContextOrQuery(r *http.Request) (uuid.UUID, bool) {
+	if val := r.Context().Value("user_uuid"); val != nil {
+		if id, ok := val.(uuid.UUID); ok && id != uuid.Nil {
+			return id, true
+		}
+		if idStr, ok := val.(string); ok && idStr != "" {
+			if id, err := uuid.Parse(idStr); err == nil && id != uuid.Nil {
+				return id, true
+			}
+		}
+	}
+	if queryStr := r.URL.Query().Get("user_uuid"); queryStr != "" {
+		if id, err := uuid.Parse(queryStr); err == nil && id != uuid.Nil {
+			return id, true
+		}
+	}
+	return uuid.Nil, false
+}
+
 func (h *BudgetingServiceHandler) CreateEnvelopeGroup(w http.ResponseWriter, r *http.Request) {
 	var group core.EnvelopeGroup
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -50,7 +69,7 @@ func (h *BudgetingServiceHandler) CreateEnvelopeGroup(w http.ResponseWriter, r *
 
 	group.UserUUID = userUUID
 
-	if err := h.envelopeGroupRepo.CreateEnvelopeGroup(&group); err != nil {
+	if _, err := h.envelopeGroupRepo.CreateEnvelopeGroup(&group, nil); err != nil {
 		http.Error(w, "Failed to create envelope group", http.StatusInternalServerError)
 		h.logger.Error("Failed to create envelope group", zap.Error(err))
 		return
@@ -83,12 +102,8 @@ func (h *BudgetingServiceHandler) GetEnvelopeGroupByID(w http.ResponseWriter, r 
 }
 
 func (h *BudgetingServiceHandler) GetEnvelopeGroupsByUserUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
-		userUUID = r.URL.Query().Get("user_uuid")
-	}
-
-	if userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID", http.StatusBadRequest)
 		h.logger.Error("Missing user UUID")
 		return
@@ -97,7 +112,7 @@ func (h *BudgetingServiceHandler) GetEnvelopeGroupsByUserUUID(w http.ResponseWri
 	groups, err := h.envelopeGroupRepo.GetEnvelopeGroupsByUserUUID(userUUID)
 	if err != nil {
 		http.Error(w, "Failed to get envelope groups", http.StatusInternalServerError)
-		h.logger.Error("Failed to get envelope groups", zap.String("user_uuid", userUUID), zap.Error(err))
+		h.logger.Error("Failed to get envelope groups", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		return
 	}
 
@@ -108,8 +123,8 @@ func (h *BudgetingServiceHandler) GetEnvelopeGroupsByUserUUID(w http.ResponseWri
 
 func (h *BudgetingServiceHandler) UpdateEnvelopeGroup(w http.ResponseWriter, r *http.Request) {
 	var group core.EnvelopeGroup
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -156,8 +171,8 @@ func (h *BudgetingServiceHandler) DeleteEnvelopeGroup(w http.ResponseWriter, r *
 
 func (h *BudgetingServiceHandler) CreateEnvelope(w http.ResponseWriter, r *http.Request) {
 	var env core.Envelope
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -171,7 +186,7 @@ func (h *BudgetingServiceHandler) CreateEnvelope(w http.ResponseWriter, r *http.
 
 	env.UserUUID = userUUID
 
-	if err := h.envelopeRepo.CreateEnvelope(&env); err != nil {
+	if _, err := h.envelopeRepo.CreateEnvelope(&env, nil); err != nil {
 		http.Error(w, "Failed to create envelope", http.StatusInternalServerError)
 		h.logger.Error("Failed to create envelope", zap.Error(err))
 		return
@@ -204,12 +219,8 @@ func (h *BudgetingServiceHandler) GetEnvelopeByID(w http.ResponseWriter, r *http
 }
 
 func (h *BudgetingServiceHandler) GetEnvelopesByUserUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
-		userUUID = r.URL.Query().Get("user_uuid")
-	}
-
-	if userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID", http.StatusBadRequest)
 		h.logger.Error("Missing user UUID")
 		return
@@ -218,7 +229,7 @@ func (h *BudgetingServiceHandler) GetEnvelopesByUserUUID(w http.ResponseWriter, 
 	envelopes, err := h.envelopeRepo.GetEnvelopesByUserUUID(userUUID)
 	if err != nil {
 		http.Error(w, "Failed to get envelopes", http.StatusInternalServerError)
-		h.logger.Error("Failed to get envelopes", zap.String("user_uuid", userUUID), zap.Error(err))
+		h.logger.Error("Failed to get envelopes", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		return
 	}
 
@@ -229,8 +240,8 @@ func (h *BudgetingServiceHandler) GetEnvelopesByUserUUID(w http.ResponseWriter, 
 
 func (h *BudgetingServiceHandler) UpdateEnvelope(w http.ResponseWriter, r *http.Request) {
 	var env core.Envelope
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -283,7 +294,7 @@ func (h *BudgetingServiceHandler) CreateAllocation(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.allocationRepo.CreateAllocation(&alloc); err != nil {
+	if _, err := h.allocationRepo.CreateAllocation(&alloc, nil); err != nil {
 		http.Error(w, "Failed to create allocation", http.StatusInternalServerError)
 		h.logger.Error("Failed to create allocation", zap.Error(err))
 		return
@@ -374,12 +385,8 @@ func (h *BudgetingServiceHandler) DeleteAllocation(w http.ResponseWriter, r *htt
 }
 
 func (h *BudgetingServiceHandler) GetActiveAllocationsByUserUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
-		userUUID = r.URL.Query().Get("user_uuid")
-	}
-
-	if userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID", http.StatusBadRequest)
 		h.logger.Error("Missing user UUID")
 		return
@@ -395,7 +402,7 @@ func (h *BudgetingServiceHandler) GetActiveAllocationsByUserUUID(w http.Response
 	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, targetDate)
 	if err != nil {
 		http.Error(w, "Failed to get active allocations", http.StatusInternalServerError)
-		h.logger.Error("Failed to get active allocations", zap.String("user_uuid", userUUID), zap.Error(err))
+		h.logger.Error("Failed to get active allocations", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		return
 	}
 

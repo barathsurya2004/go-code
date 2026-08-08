@@ -34,12 +34,12 @@ func nullTime(t time.Time) any {
 	return t
 }
 
-func (r *pgTokenRepo) CreateToken(token *core.Token) (uuid.UUID, error) {
-	if token.UserUUID == "" {
+func (r *pgTokenRepo) CreateToken(token *core.Token, Tx *sql.Tx) (uuid.UUID, error) {
+	if token.UserUUID == uuid.Nil {
 		return uuid.Nil, errors.New("user UUID is required")
 	}
-	if token.Token == "" {
-		token.Token = uuid.NewString()
+	if token.Token == uuid.Nil {
+		token.Token = uuid.New()
 	}
 
 	query := `
@@ -61,12 +61,12 @@ func (r *pgTokenRepo) CreateToken(token *core.Token) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return uuid.Parse(token.Token)
+	return token.Token, nil
 
 }
 
-func (r *pgTokenRepo) DeleteToken(userUUID string) error {
-	if userUUID == "" {
+func (r *pgTokenRepo) DeleteToken(userUUID uuid.UUID) error {
+	if userUUID == uuid.Nil {
 		return errors.New("user UUID is required")
 	}
 	query := `
@@ -76,8 +76,8 @@ func (r *pgTokenRepo) DeleteToken(userUUID string) error {
 	return err
 }
 
-func (r *pgTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) {
-	if userUUID == "" {
+func (r *pgTokenRepo) GetTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+	if userUUID == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}
 
@@ -114,8 +114,8 @@ func (r *pgTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error)
 	return token, nil
 }
 
-func (r *pgTokenRepo) GetToken(token string) (*core.Token, error) {
-	if token == "" {
+func (r *pgTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) {
+	if token == uuid.Nil {
 		return nil, errors.New("token is required")
 	}
 
@@ -157,7 +157,7 @@ func (r *pgTokenRepo) GetToken(token string) (*core.Token, error) {
 }
 
 func (r *pgTokenRepo) UpdateToken(token *core.Token) error {
-	if token.UserUUID == "" {
+	if token.UserUUID == uuid.Nil {
 		return errors.New("user UUID is required")
 	}
 

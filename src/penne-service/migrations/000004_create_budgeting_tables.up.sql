@@ -23,6 +23,7 @@ create table if not exists envelope (
     cadence varchar(50) default 'monthly',
     country_iso varchar(10) not null default 'IN',
     created_at timestamptz default now(),
+    updated_at timestamptz default now(),
     foreign key (user_uuid) references users(uuid) on delete cascade,
     foreign key (envelope_group_id) references envelope_group(id) on delete cascade
 );
@@ -38,6 +39,7 @@ create table if not exists allocation (
     end_date date not null,
     allocated_amount_e5 bigint not null,
     created_at timestamptz default now(),
+    updated_at timestamptz default now(),
     foreign key (envelope_id) references envelope(id) on delete cascade,
     constraint no_overlapping_allocations
         exclude using gist (

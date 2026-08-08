@@ -20,26 +20,25 @@ func NewPgUserRepo(db *sql.DB) core.UserRepository {
 	}
 }
 
-func (r *pgUserRepo) CreateUser(user *core.User) error {
+func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO users (uuid, name)
-		VALUES ($1, $2)
+		INSERT INTO users (name)
+		VALUES ($1)
+		RETURNING uuid
 	`
 
-	// validation check
-	if user.UUID == "" {
-		return errors.New("user UUID is required")
-	}
-
 	if strings.TrimSpace(user.Name) == "" {
-		return errors.New("user name is required")
+		return uuid.Nil, errors.New("user name iss required")
 	}
 
-	_, err := r.db.Exec(query, user.UUID, user.Name)
-	return err
+	var id uuid.UUID
+	if err := Tx.QueryRow(query, user.Name).Scan(&id); err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
 }
 
-func (r *pgUserRepo) GetUserByUUID(id string) (*core.User, error) {
+func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 	query := `
 		SELECT uuid, name, created_at, updated_at
 		FROM users
@@ -47,11 +46,8 @@ func (r *pgUserRepo) GetUserByUUID(id string) (*core.User, error) {
 	`
 
 	// validation checks
-	if strings.TrimSpace(id) == "" {
+	if id == uuid.Nil {
 		return nil, errors.New("user UUID is required")
-	}
-	if err := uuid.Validate(id); err != nil {
-		return nil, errors.New("user UUID is invalid")
 	}
 
 	user := &core.User{}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
@@ -19,41 +21,56 @@ import (
 
 type dummyUserRepo struct{}
 
-func (d *dummyUserRepo) CreateUser(u *core.User) error               { return nil }
-func (d *dummyUserRepo) GetUserByUUID(id string) (*core.User, error) { return nil, nil }
+func (d *dummyUserRepo) CreateUser(u *core.User, Tx *sql.Tx) (uuid.UUID, error) {
+	return validTokenUUID, nil
+}
+func (d *dummyUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) { return nil, nil }
 
 type dummyTokenRepo struct{}
 
-func (d *dummyTokenRepo) CreateToken(t *core.Token) (uuid.UUID, error) {
-	return uuid.MustParse("123e4567-e89b-12d3-a456-426614174000"), nil
+var validTokenUUID = uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+var expiredTokenUUID = uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
+
+func (d *dummyTokenRepo) CreateToken(t *core.Token, Tx *sql.Tx) (uuid.UUID, error) {
+	return validTokenUUID, nil
 }
-func (d *dummyTokenRepo) DeleteToken(userUUID string) error { return nil }
-func (d *dummyTokenRepo) GetToken(token string) (*core.Token, error) {
-	if token == "invalid" {
+func (d *dummyTokenRepo) DeleteToken(userUUID uuid.UUID) error { return nil }
+func (d *dummyTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) {
+	if token == uuid.Nil {
 		return nil, errors.New("invalid token")
 	}
-	if token == "expired" {
+	if token == expiredTokenUUID {
 		past := time.Now().Add(-1 * time.Hour)
-		return &core.Token{UserUUID: "123e4567-e89b-12d3-a456-426614174000", ExpiresAt: &past}, nil
+		return &core.Token{UserUUID: validTokenUUID, ExpiresAt: &past}, nil
 	}
-	return &core.Token{UserUUID: "123e4567-e89b-12d3-a456-426614174000"}, nil
+	return &core.Token{UserUUID: validTokenUUID}, nil
 }
-func (d *dummyTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) { return nil, nil }
-func (d *dummyTokenRepo) UpdateToken(t *core.Token) error                           { return nil }
+func (d *dummyTokenRepo) GetTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+	return nil, nil
+}
+func (d *dummyTokenRepo) UpdateToken(t *core.Token) error { return nil }
 
 type dummyTxnRepo struct{}
 
-func (d *dummyTxnRepo) CreateTransaction(t *core.Transaction) error                   { return nil }
-func (d *dummyTxnRepo) GetTransactionByUUID(id string) (*core.Transaction, error)      { return nil, nil }
-func (d *dummyTxnRepo) GetTransactionsByUserUUID(id string) ([]*core.Transaction, error) { return nil, nil }
-func (d *dummyTxnRepo) UpdateTransaction(t *core.Transaction) error                   { return nil }
-func (d *dummyTxnRepo) DeleteTransaction(id string) error                            { return nil }
+func (d *dummyTxnRepo) CreateTransaction(t *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (d *dummyTxnRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) { return nil, nil }
+func (d *dummyTxnRepo) GetTransactionsByUserUUID(id uuid.UUID) ([]*core.Transaction, error) {
+	return nil, nil
+}
+func (d *dummyTxnRepo) UpdateTransaction(t *core.Transaction) error { return nil }
+func (d *dummyTxnRepo) DeleteTransaction(id uuid.UUID) error        { return nil }
 
 type dummyEnvelopeGroupRepo struct{}
 
-func (d *dummyEnvelopeGroupRepo) CreateEnvelopeGroup(g *core.EnvelopeGroup) error                 { return nil }
-func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) { return nil, nil }
-func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupsByUserUUID(id string) ([]*core.EnvelopeGroup, error) {
+func (d *dummyEnvelopeGroupRepo) CreateEnvelopeGroup(g *core.EnvelopeGroup, Tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) {
+	return nil, nil
+}
+func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupsByUserUUID(id uuid.UUID) ([]*core.EnvelopeGroup, error) {
 	return nil, nil
 }
 func (d *dummyEnvelopeGroupRepo) UpdateEnvelopeGroup(g *core.EnvelopeGroup) error { return nil }
@@ -61,9 +78,13 @@ func (d *dummyEnvelopeGroupRepo) DeleteEnvelopeGroup(id uuid.UUID) error        
 
 type dummyEnvelopeRepo struct{}
 
-func (d *dummyEnvelopeRepo) CreateEnvelope(e *core.Envelope) error                 { return nil }
-func (d *dummyEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) { return nil, nil }
-func (d *dummyEnvelopeRepo) GetEnvelopesByUserUUID(id string) ([]*core.Envelope, error) {
+func (d *dummyEnvelopeRepo) CreateEnvelope(e *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (d *dummyEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) {
+	return nil, nil
+}
+func (d *dummyEnvelopeRepo) GetEnvelopesByUserUUID(id uuid.UUID) ([]*core.Envelope, error) {
 	return nil, nil
 }
 func (d *dummyEnvelopeRepo) UpdateEnvelope(e *core.Envelope) error { return nil }
@@ -71,12 +92,16 @@ func (d *dummyEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error          { return
 
 type dummyAllocationRepo struct{}
 
-func (d *dummyAllocationRepo) CreateAllocation(a *core.Allocation) error                 { return nil }
-func (d *dummyAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) { return nil, nil }
+func (d *dummyAllocationRepo) CreateAllocation(a *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (d *dummyAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) {
+	return nil, nil
+}
 func (d *dummyAllocationRepo) GetAllocationsByEnvelopeID(id uuid.UUID) ([]*core.Allocation, error) {
 	return nil, nil
 }
-func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
 	return nil, nil
 }
 func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
@@ -85,7 +110,10 @@ func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error          { re
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
 	tokenRepo := &dummyTokenRepo{}
-	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log)
+	mockDB, mock, _ := sqlmock.New()
+	defer mockDB.Close()
+
+	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log)
 	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log)
 
@@ -120,7 +148,11 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected body 'OK(deployment check)', got '%s'", string(body))
 		}
 
+		validAuthHeader := "Bearer " + validTokenUUID.String()
+
 		// Test user endpoints
+		mock.ExpectBegin()
+		mock.ExpectCommit()
 		reqUserPost := httptest.NewRequest("POST", "/user", io.NopCloser(bytes.NewReader([]byte(`{"name":"Alice"}`))))
 		rrUserPost := httptest.NewRecorder()
 		router.ServeHTTP(rrUserPost, reqUserPost)
@@ -128,8 +160,8 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected status 201 for POST /user route, got %d", rrUserPost.Code)
 		}
 
-		reqUserGet := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		reqUserGet.Header.Set("Authorization", "Bearer valid")
+		reqUserGet := httptest.NewRequest("GET", "/user?user_uuid="+validTokenUUID.String(), nil)
+		reqUserGet.Header.Set("Authorization", validAuthHeader)
 		rrUserGet := httptest.NewRecorder()
 		router.ServeHTTP(rrUserGet, reqUserGet)
 		if rrUserGet.Code != http.StatusOK {
@@ -138,39 +170,39 @@ func TestServer(t *testing.T) {
 
 		// Test transaction endpoints
 		reqTxnPost := httptest.NewRequest("POST", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"amount_e5":100}`))))
-		reqTxnPost.Header.Set("Authorization", "Bearer valid")
+		reqTxnPost.Header.Set("Authorization", validAuthHeader)
 		rrTxnPost := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnPost, reqTxnPost)
 		if rrTxnPost.Code != http.StatusCreated {
 			t.Errorf("expected status 201 for POST /transaction route, got %d", rrTxnPost.Code)
 		}
 
-		reqTxnGet := httptest.NewRequest("GET", "/transaction?txn_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		reqTxnGet.Header.Set("Authorization", "Bearer valid")
+		reqTxnGet := httptest.NewRequest("GET", "/transaction?txn_uuid="+validTokenUUID.String(), nil)
+		reqTxnGet.Header.Set("Authorization", validAuthHeader)
 		rrTxnGet := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnGet, reqTxnGet)
 		if rrTxnGet.Code != http.StatusOK {
 			t.Errorf("expected status 200 for GET /transaction route, got %d", rrTxnGet.Code)
 		}
 
-		reqTxnsGet := httptest.NewRequest("GET", "/transactions?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		reqTxnsGet.Header.Set("Authorization", "Bearer valid")
+		reqTxnsGet := httptest.NewRequest("GET", "/transactions?user_uuid="+validTokenUUID.String(), nil)
+		reqTxnsGet.Header.Set("Authorization", validAuthHeader)
 		rrTxnsGet := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnsGet, reqTxnsGet)
 		if rrTxnsGet.Code != http.StatusOK {
 			t.Errorf("expected status 200 for GET /transactions route, got %d", rrTxnsGet.Code)
 		}
 
-		reqTxnPut := httptest.NewRequest("PUT", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"uuid":"123e4567-e89b-12d3-a456-426614174000"}`))))
-		reqTxnPut.Header.Set("Authorization", "Bearer valid")
+		reqTxnPut := httptest.NewRequest("PUT", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"uuid":"`+validTokenUUID.String()+`"}`))))
+		reqTxnPut.Header.Set("Authorization", validAuthHeader)
 		rrTxnPut := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnPut, reqTxnPut)
 		if rrTxnPut.Code != http.StatusOK {
 			t.Errorf("expected status 200 for PUT /transaction route, got %d", rrTxnPut.Code)
 		}
 
-		reqTxnDelete := httptest.NewRequest("DELETE", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		reqTxnDelete.Header.Set("Authorization", "Bearer valid")
+		reqTxnDelete := httptest.NewRequest("DELETE", "/transaction?uuid="+validTokenUUID.String(), nil)
+		reqTxnDelete.Header.Set("Authorization", validAuthHeader)
 		rrTxnDelete := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnDelete, reqTxnDelete)
 		if rrTxnDelete.Code != http.StatusOK {
@@ -181,8 +213,8 @@ func TestServer(t *testing.T) {
 	t.Run("AuthMiddleware", func(t *testing.T) {
 		middleware := AuthMiddleware(tokenRepo)
 		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userUUID, _ := r.Context().Value("user_uuid").(string)
-			w.Write([]byte(userUUID))
+			userUUID, _ := r.Context().Value("user_uuid").(uuid.UUID)
+			w.Write([]byte(userUUID.String()))
 		})
 
 		handler := middleware(nextHandler)
@@ -217,9 +249,20 @@ func TestServer(t *testing.T) {
 			}
 		})
 
-		t.Run("Invalid Token", func(t *testing.T) {
+		t.Run("Invalid Token Format", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/test", nil)
-			req.Header.Set("Authorization", "Bearer invalid")
+			req.Header.Set("Authorization", "Bearer not-a-valid-uuid")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusUnauthorized {
+				t.Errorf("expected status 401, got %d", rr.Code)
+			}
+		})
+
+		t.Run("Token Not Found", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.Header.Set("Authorization", "Bearer "+uuid.Nil.String())
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
@@ -230,7 +273,7 @@ func TestServer(t *testing.T) {
 
 		t.Run("Expired Token", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/test", nil)
-			req.Header.Set("Authorization", "Bearer expired")
+			req.Header.Set("Authorization", "Bearer "+expiredTokenUUID.String())
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
@@ -241,7 +284,7 @@ func TestServer(t *testing.T) {
 
 		t.Run("Valid Token", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/test", nil)
-			req.Header.Set("Authorization", "Bearer valid")
+			req.Header.Set("Authorization", "Bearer "+validTokenUUID.String())
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
@@ -249,8 +292,8 @@ func TestServer(t *testing.T) {
 				t.Errorf("expected status 200, got %d", rr.Code)
 			}
 			body, _ := io.ReadAll(rr.Body)
-			if string(body) != "123e4567-e89b-12d3-a456-426614174000" {
-				t.Errorf("expected body '123e4567-e89b-12d3-a456-426614174000', got '%s'", string(body))
+			if string(body) != validTokenUUID.String() {
+				t.Errorf("expected body '%s', got '%s'", validTokenUUID.String(), string(body))
 			}
 		})
 	})

@@ -19,11 +19,12 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 	defer db.Close()
 
 	repo := NewPgEnvelopeRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Exec Error", func(t *testing.T) {
 		now := time.Now()
 		env := &core.Envelope{
-			UserUUID:        "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID:        userUUID,
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  10000,
 			Cadence:         "monthly",
@@ -32,7 +33,9 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 			UpdatedAt:       now,
 			IsSystem:        false,
 		}
-		mock.ExpectExec("INSERT INTO envelope").
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO envelope").
 			WithArgs(
 				env.UserUUID,
 				env.EnvelopeGroupID,
@@ -45,7 +48,7 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 			).
 			WillReturnError(errors.New("db error"))
 
-		err := repo.CreateEnvelope(env)
+		_, err := repo.CreateEnvelope(env, tx)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -53,8 +56,9 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
+		genID := uuid.New()
 		env := &core.Envelope{
-			UserUUID:        "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID:        userUUID,
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  10000,
 			Cadence:         "monthly",
@@ -63,7 +67,9 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 			UpdatedAt:       now,
 			IsSystem:        false,
 		}
-		mock.ExpectExec("INSERT INTO envelope").
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO envelope").
 			WithArgs(
 				env.UserUUID,
 				env.EnvelopeGroupID,
@@ -74,11 +80,14 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 				env.UpdatedAt,
 				env.IsSystem,
 			).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
 
-		err := repo.CreateEnvelope(env)
+		id, err := repo.CreateEnvelope(env, tx)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genID {
+			t.Errorf("expected ID %v, got %v", genID, id)
 		}
 	})
 }
@@ -92,6 +101,7 @@ func TestPgEnvelopeRepo_GetEnvelopeByID(t *testing.T) {
 
 	repo := NewPgEnvelopeRepo(db)
 	envID := uuid.New()
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Query Error", func(t *testing.T) {
 		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
@@ -110,7 +120,7 @@ func TestPgEnvelopeRepo_GetEnvelopeByID(t *testing.T) {
 		rows := sqlmock.NewRows([]string{
 			"id", "user_uuid", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
 		}).AddRow(
-			envID, "123e4567-e89b-12d3-a456-426614174000", groupID, 50000.0, "monthly", "US", now, now, false,
+			envID, userUUID, groupID, 50000.0, "monthly", "US", now, now, false,
 		)
 
 		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
@@ -138,7 +148,7 @@ func TestPgEnvelopeRepo_GetEnvelopesByUserUUID(t *testing.T) {
 	defer db.Close()
 
 	repo := NewPgEnvelopeRepo(db)
-	userUUID := "123e4567-e89b-12d3-a456-426614174000"
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Query Error", func(t *testing.T) {
 		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
@@ -217,12 +227,13 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 	defer db.Close()
 
 	repo := NewPgEnvelopeRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Exec Error", func(t *testing.T) {
 		now := time.Now()
 		env := &core.Envelope{
 			ID:              uuid.New(),
-			UserUUID:        "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID:        userUUID,
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  15000,
 			Cadence:         "monthly",
@@ -254,7 +265,7 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 		now := time.Now()
 		env := &core.Envelope{
 			ID:              uuid.New(),
-			UserUUID:        "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID:        userUUID,
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  15000,
 			Cadence:         "monthly",

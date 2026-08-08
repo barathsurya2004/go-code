@@ -8,6 +8,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
@@ -19,9 +20,11 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 	defer db.Close()
 
 	repo := NewTokenRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	tokenUUID := uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		_, err := repo.CreateToken(&core.Token{})
+		_, err := repo.CreateToken(&core.Token{}, nil)
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
@@ -29,7 +32,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 
 	t.Run("Exec Error", func(t *testing.T) {
 		token := &core.Token{
-			UserUUID: "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID: userUUID,
 			Prefix:   "mcp_",
 			Name:     "default",
 			Scope:    []string{"all"},
@@ -48,7 +51,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnError(errors.New("db error"))
 
-		_, err := repo.CreateToken(token)
+		_, err := repo.CreateToken(token, nil)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -57,7 +60,8 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
 		token := &core.Token{
-			UserUUID:  "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID:  userUUID,
+			Token:     tokenUUID,
 			Prefix:    "mcp_",
 			Name:      "default",
 			Scope:     []string{"all"},
@@ -68,7 +72,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 		mock.ExpectExec("INSERT INTO user_tokens").
 			WithArgs(
 				token.UserUUID,
-				sqlmock.AnyArg(),
+				token.Token,
 				token.Prefix,
 				token.Name,
 				pq.Array(token.Scope),
@@ -79,11 +83,11 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		id, err := repo.CreateToken(token)
+		id, err := repo.CreateToken(token, nil)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
-		if id.String() == "" {
+		if id == uuid.Nil {
 			t.Error("expected non-empty token UUID")
 		}
 	})
@@ -97,16 +101,16 @@ func TestPgTokenRepo_DeleteToken(t *testing.T) {
 	defer db.Close()
 
 	repo := NewTokenRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		err := repo.DeleteToken("")
+		err := repo.DeleteToken(uuid.Nil)
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		userUUID := "123e4567-e89b-12d3-a456-426614174000"
 		mock.ExpectExec("DELETE FROM user_tokens").
 			WithArgs(userUUID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
@@ -126,16 +130,17 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 	defer db.Close()
 
 	repo := NewTokenRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	tokenUUID := uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		_, err := repo.GetTokenWithUserUUID("")
+		_, err := repo.GetTokenWithUserUUID(uuid.Nil)
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		userUUID := "123e4567-e89b-12d3-a456-426614174000"
 		mock.ExpectQuery("SELECT user_id, token_uuid").
 			WithArgs(userUUID).
 			WillReturnError(sql.ErrNoRows)
@@ -147,8 +152,6 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		userUUID := "123e4567-e89b-12d3-a456-426614174000"
-		tokenUUID := "87654321-e89b-12d3-a456-426614174000"
 		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"user_id", "token_uuid", "prefix", "name", "scopes", "expires_at", "last_used_at", "created_at", "updated_at"}).
@@ -176,16 +179,17 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 	defer db.Close()
 
 	repo := NewTokenRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	tokenUUID := uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty Token", func(t *testing.T) {
-		_, err := repo.GetToken("")
+		_, err := repo.GetToken(uuid.Nil)
 		if err == nil || err.Error() != "token is required" {
 			t.Errorf("expected 'token is required', got %v", err)
 		}
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		tokenUUID := "87654321-e89b-12d3-a456-426614174000"
 		mock.ExpectQuery("SELECT user_id, token_uuid").
 			WithArgs(tokenUUID).
 			WillReturnError(sql.ErrNoRows)
@@ -197,8 +201,6 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		userUUID := "123e4567-e89b-12d3-a456-426614174000"
-		tokenUUID := "87654321-e89b-12d3-a456-426614174000"
 		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"user_id", "token_uuid", "prefix", "name", "scopes", "expires_at", "last_used_at", "created_at", "updated_at"}).
@@ -230,6 +232,8 @@ func TestPgTokenRepo_UpdateToken(t *testing.T) {
 	defer db.Close()
 
 	repo := NewTokenRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	tokenUUID := uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
 		err := repo.UpdateToken(&core.Token{})
@@ -241,8 +245,8 @@ func TestPgTokenRepo_UpdateToken(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
 		token := &core.Token{
-			UserUUID:  "123e4567-e89b-12d3-a456-426614174000",
-			Token:     "87654321-e89b-12d3-a456-426614174000",
+			UserUUID:  userUUID,
+			Token:     tokenUUID,
 			Prefix:    "mcp_",
 			Name:      "default",
 			Scope:     []string{"all"},

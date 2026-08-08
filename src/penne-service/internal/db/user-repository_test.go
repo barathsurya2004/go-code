@@ -1,13 +1,14 @@
 package db
 
 import (
-	"errors"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 )
 
 func TestPgUserRepo_CreateUser(t *testing.T) {
@@ -18,16 +19,10 @@ func TestPgUserRepo_CreateUser(t *testing.T) {
 	defer db.Close()
 
 	repo := NewPgUserRepo(db)
-
-	t.Run("Empty UUID", func(t *testing.T) {
-		err := repo.CreateUser(&core.User{Name: "Alice"})
-		if err == nil || err.Error() != "user UUID is required" {
-			t.Errorf("expected 'user UUID is required', got %v", err)
-		}
-	})
+	genUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty Name", func(t *testing.T) {
-		err := repo.CreateUser(&core.User{UUID: "123e4567-e89b-12d3-a456-426614174000", Name: "   "})
+		_, err := repo.CreateUser(&core.User{Name: "   "}, nil)
 		if err == nil || err.Error() != "user name is required" {
 			t.Errorf("expected 'user name is required', got %v", err)
 		}
@@ -35,14 +30,16 @@ func TestPgUserRepo_CreateUser(t *testing.T) {
 
 	t.Run("Exec Error", func(t *testing.T) {
 		user := &core.User{
-			UUID: "123e4567-e89b-12d3-a456-426614174000",
 			Name: "Alice",
 		}
-		mock.ExpectExec("INSERT INTO users").
-			WithArgs(user.UUID, user.Name).
+		// mock transaction
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO users").
+			WithArgs(user.Name).
 			WillReturnError(errors.New("db error"))
 
-		err := repo.CreateUser(user)
+		_, err := repo.CreateUser(user, tx)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -50,16 +47,20 @@ func TestPgUserRepo_CreateUser(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		user := &core.User{
-			UUID: "123e4567-e89b-12d3-a456-426614174000",
 			Name: "Alice",
 		}
-		mock.ExpectExec("INSERT INTO users").
-			WithArgs(user.UUID, user.Name).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO users").
+			WithArgs(user.Name).
+			WillReturnRows(sqlmock.NewRows([]string{"uuid"}).AddRow(genUUID))
 
-		err := repo.CreateUser(user)
+		id, err := repo.CreateUser(user, tx)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genUUID {
+			t.Errorf("expected ID %v, got %v", genUUID, id)
 		}
 	})
 }
@@ -72,23 +73,16 @@ func TestPgUserRepo_GetUserByUUID(t *testing.T) {
 	defer db.Close()
 
 	repo := NewPgUserRepo(db)
+	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UUID", func(t *testing.T) {
-		_, err := repo.GetUserByUUID("")
+		_, err := repo.GetUserByUUID(uuid.Nil)
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
 	})
 
-	t.Run("Invalid UUID", func(t *testing.T) {
-		_, err := repo.GetUserByUUID("invalid-uuid")
-		if err == nil || err.Error() != "user UUID is invalid" {
-			t.Errorf("expected 'user UUID is invalid', got %v", err)
-		}
-	})
-
 	t.Run("Query Error", func(t *testing.T) {
-		validUUID := "123e4567-e89b-12d3-a456-426614174000"
 		mock.ExpectQuery("SELECT uuid, name, created_at, updated_at FROM users").
 			WithArgs(validUUID).
 			WillReturnError(sql.ErrNoRows)
@@ -100,7 +94,6 @@ func TestPgUserRepo_GetUserByUUID(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		validUUID := "123e4567-e89b-12d3-a456-426614174000"
 		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"uuid", "name", "created_at", "updated_at"}).

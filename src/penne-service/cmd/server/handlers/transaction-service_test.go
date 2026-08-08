@@ -3,38 +3,40 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type mockTxnRepo struct {
-	createTransactionFn         func(txn *core.Transaction) error
-	getTransactionByUUIDFn      func(uuid string) (*core.Transaction, error)
-	getTransactionsByUserUUIDFn func(userUUID string) ([]*core.Transaction, error)
+	createTransactionFn         func(txn *core.Transaction) (uuid.UUID, error)
+	getTransactionByUUIDFn      func(id uuid.UUID) (*core.Transaction, error)
+	getTransactionsByUserUUIDFn func(userUUID uuid.UUID) ([]*core.Transaction, error)
 	updateTransactionFn         func(txn *core.Transaction) error
-	deleteTransactionFn         func(uuid string) error
+	deleteTransactionFn         func(id uuid.UUID) error
 }
 
-func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction) error {
+func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	if m.createTransactionFn != nil {
 		return m.createTransactionFn(txn)
 	}
-	return nil
+	return uuid.Nil, nil
 }
 
-func (m *mockTxnRepo) GetTransactionByUUID(uuid string) (*core.Transaction, error) {
+func (m *mockTxnRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
 	if m.getTransactionByUUIDFn != nil {
-		return m.getTransactionByUUIDFn(uuid)
+		return m.getTransactionByUUIDFn(id)
 	}
 	return nil, nil
 }
 
-func (m *mockTxnRepo) GetTransactionsByUserUUID(userUUID string) ([]*core.Transaction, error) {
+func (m *mockTxnRepo) GetTransactionsByUserUUID(userUUID uuid.UUID) ([]*core.Transaction, error) {
 	if m.getTransactionsByUserUUIDFn != nil {
 		return m.getTransactionsByUserUUIDFn(userUUID)
 	}
@@ -48,9 +50,9 @@ func (m *mockTxnRepo) UpdateTransaction(txn *core.Transaction) error {
 	return nil
 }
 
-func (m *mockTxnRepo) DeleteTransaction(uuid string) error {
+func (m *mockTxnRepo) DeleteTransaction(id uuid.UUID) error {
 	if m.deleteTransactionFn != nil {
-		return m.deleteTransactionFn(uuid)
+		return m.deleteTransactionFn(id)
 	}
 	return nil
 }
@@ -59,7 +61,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 	logger := zap.NewNop()
 	repo := &mockTxnRepo{}
 	handler := NewTransactionServiceHandler(repo, logger)
-	validUUID := "123e4567-e89b-12d3-a456-426614174000"
+	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateTransaction - Invalid Payload", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString("invalid json"))
@@ -85,8 +87,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("CreateTransaction - Repo Error", func(t *testing.T) {
-		repo.createTransactionFn = func(txn *core.Transaction) error {
-			return errors.New("db error")
+		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("db error")
 		}
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
@@ -100,8 +102,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("CreateTransaction - Success", func(t *testing.T) {
-		repo.createTransactionFn = func(txn *core.Transaction) error {
-			return nil
+		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
+			return uuid.New(), nil
 		}
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
@@ -126,10 +128,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionByUUID - Repo Error", func(t *testing.T) {
-		repo.getTransactionByUUIDFn = func(uuid string) (*core.Transaction, error) {
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
 			return nil, errors.New("not found")
 		}
-		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID, nil)
+		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionByUUID(rr, req)
@@ -140,10 +142,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionByUUID - Success", func(t *testing.T) {
-		repo.getTransactionByUUIDFn = func(uuid string) (*core.Transaction, error) {
-			return &core.Transaction{UUID: uuid, AmountE5: 500}, nil
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{UUID: id, AmountE5: 500}, nil
 		}
-		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID, nil)
+		req := httptest.NewRequest("GET", "/transaction?txn_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionByUUID(rr, req)
@@ -165,10 +167,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionsByUserUUID - Repo Error", func(t *testing.T) {
-		repo.getTransactionsByUserUUIDFn = func(userUUID string) ([]*core.Transaction, error) {
+		repo.getTransactionsByUserUUIDFn = func(userUUID uuid.UUID) ([]*core.Transaction, error) {
 			return nil, errors.New("db error")
 		}
-		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID, nil)
+		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionsByUserUUID(rr, req)
@@ -179,10 +181,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionsByUserUUID - Success", func(t *testing.T) {
-		repo.getTransactionsByUserUUIDFn = func(userUUID string) ([]*core.Transaction, error) {
-			return []*core.Transaction{{UUID: "txn-1", UserUUID: userUUID}}, nil
+		repo.getTransactionsByUserUUIDFn = func(userUUID uuid.UUID) ([]*core.Transaction, error) {
+			return []*core.Transaction{{UUID: uuid.New(), UserUUID: userUUID}}, nil
 		}
-		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID, nil)
+		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionsByUserUUID(rr, req)
@@ -205,7 +207,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("UpdateTransaction - Missing Context User UUID", func(t *testing.T) {
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID.String()+`"}`))
 		rr := httptest.NewRecorder()
 
 		handler.UpdateTransaction(rr, req)
@@ -219,7 +221,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
 			return errors.New("update failed")
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID.String()+`"}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
@@ -234,7 +236,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
 			return nil
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID+`"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID.String()+`"}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
@@ -249,8 +251,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/transaction", nil)
 		rr := httptest.NewRecorder()
 
-		// Expect 400 Bad Request when context user_uuid is missing or invalid
-		ctx := context.WithValue(req.Context(), "user_uuid", "invalid-uuid")
+		ctx := context.WithValue(req.Context(), "user_uuid", uuid.Nil)
 		req = req.WithContext(ctx)
 
 		handler.DeleteTransaction(rr, req)
@@ -261,10 +262,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("DeleteTransaction - Repo Error", func(t *testing.T) {
-		repo.deleteTransactionFn = func(uuid string) error {
+		repo.deleteTransactionFn = func(id uuid.UUID) error {
 			return errors.New("delete failed")
 		}
-		req := httptest.NewRequest("DELETE", "/transaction", nil)
+		req := httptest.NewRequest("DELETE", "/transaction?txn_uuid="+validUUID.String(), nil)
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
@@ -276,10 +277,10 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("DeleteTransaction - Success", func(t *testing.T) {
-		repo.deleteTransactionFn = func(uuid string) error {
+		repo.deleteTransactionFn = func(id uuid.UUID) error {
 			return nil
 		}
-		req := httptest.NewRequest("DELETE", "/transaction", nil)
+		req := httptest.NewRequest("DELETE", "/transaction?txn_uuid="+validUUID.String(), nil)
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 

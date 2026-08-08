@@ -4,16 +4,22 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestModelsJSON(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 
+	txnUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
+	tokenUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174002")
+
 	t.Run("Transaction JSON", func(t *testing.T) {
 		txn := Transaction{
-			UUID:       "123e4567-e89b-12d3-a456-426614174000",
+			UUID:       txnUUID,
 			AmountE5:   500,
-			UserUUID:   "user-1",
+			UserUUID:   userUUID,
 			CountryISO: "US",
 			Category:   "Food",
 			BankName:   "Chase",
@@ -39,7 +45,7 @@ func TestModelsJSON(t *testing.T) {
 
 	t.Run("User JSON", func(t *testing.T) {
 		user := User{
-			UUID:      "user-123",
+			UUID:      userUUID,
 			Name:      "Alice",
 			CreatedAt: now,
 			UpdatedAt: now,
@@ -63,8 +69,8 @@ func TestModelsJSON(t *testing.T) {
 	t.Run("Token JSON", func(t *testing.T) {
 		exp := now.Add(24 * time.Hour)
 		token := Token{
-			UserUUID:  "user-123",
-			Token:     "tok-456",
+			UserUUID:  userUUID,
+			Token:     tokenUUID,
 			Prefix:    "mcp_",
 			Name:      "default",
 			Scope:     []string{"read", "write"},

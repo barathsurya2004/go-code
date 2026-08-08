@@ -19,13 +19,14 @@ func TestEnvelopeGroupRepository_CreateEnvelopeGroup(t *testing.T) {
 	defer db.Close()
 
 	repo := NewEnvelopeGroupRepository(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty Name Error", func(t *testing.T) {
 		group := &core.EnvelopeGroup{
-			UserUUID: "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID: userUUID,
 			Name:     "   ",
 		}
-		err := repo.CreateEnvelopeGroup(group)
+		_, err := repo.CreateEnvelopeGroup(group, nil)
 		if err == nil || err.Error() != "envelope group name is required" {
 			t.Errorf("expected 'envelope group name is required', got %v", err)
 		}
@@ -33,15 +34,17 @@ func TestEnvelopeGroupRepository_CreateEnvelopeGroup(t *testing.T) {
 
 	t.Run("Exec Error", func(t *testing.T) {
 		group := &core.EnvelopeGroup{
-			UserUUID: "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID: userUUID,
 			Name:     "Savings",
 			IsSystem: false,
 		}
-		mock.ExpectExec("INSERT INTO envelope_groups").
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO envelope_group").
 			WithArgs(group.UserUUID, group.Name, group.IsSystem).
 			WillReturnError(errors.New("db error"))
 
-		err := repo.CreateEnvelopeGroup(group)
+		_, err := repo.CreateEnvelopeGroup(group, tx)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -49,17 +52,23 @@ func TestEnvelopeGroupRepository_CreateEnvelopeGroup(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		group := &core.EnvelopeGroup{
-			UserUUID: "123e4567-e89b-12d3-a456-426614174000",
+			UserUUID: userUUID,
 			Name:     "Savings",
 			IsSystem: false,
 		}
-		mock.ExpectExec("INSERT INTO envelope_groups").
+		genID := uuid.New()
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("INSERT INTO envelope_group").
 			WithArgs(group.UserUUID, group.Name, group.IsSystem).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
 
-		err := repo.CreateEnvelopeGroup(group)
+		id, err := repo.CreateEnvelopeGroup(group, tx)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genID {
+			t.Errorf("expected ID %v, got %v", genID, id)
 		}
 	})
 }
@@ -73,6 +82,7 @@ func TestEnvelopeGroupRepository_GetEnvelopeGroupByID(t *testing.T) {
 
 	repo := NewEnvelopeGroupRepository(db)
 	validID := uuid.New()
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Invalid ID", func(t *testing.T) {
 		_, err := repo.GetEnvelopeGroupByID(uuid.Nil)
@@ -95,7 +105,7 @@ func TestEnvelopeGroupRepository_GetEnvelopeGroupByID(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
 		rows := sqlmock.NewRows([]string{"id", "user_uuid", "name", "is_system", "created_at", "updated_at"}).
-			AddRow(validID, "123e4567-e89b-12d3-a456-426614174000", "Bills", true, now, now)
+			AddRow(validID, userUUID, "Bills", true, now, now)
 
 		mock.ExpectQuery("SELECT id, user_uuid, name, is_system").
 			WithArgs(validID).
@@ -122,10 +132,10 @@ func TestEnvelopeGroupRepository_GetEnvelopeGroupsByUserUUID(t *testing.T) {
 	defer db.Close()
 
 	repo := NewEnvelopeGroupRepository(db)
-	validUserUUID := "123e4567-e89b-12d3-a456-426614174000"
+	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Invalid User UUID", func(t *testing.T) {
-		_, err := repo.GetEnvelopeGroupsByUserUUID("invalid-uuid")
+		_, err := repo.GetEnvelopeGroupsByUserUUID(uuid.Nil)
 		if err == nil || err.Error() != "user UUID is invalid" {
 			t.Errorf("expected 'user UUID is invalid', got %v", err)
 		}
@@ -229,7 +239,7 @@ func TestEnvelopeGroupRepository_UpdateEnvelopeGroup(t *testing.T) {
 			IsSystem: false,
 		}
 
-		mock.ExpectExec("UPDATE envelope_groups").
+		mock.ExpectExec("UPDATE envelope_group").
 			WithArgs(group.Name, group.IsSystem, group.ID).
 			WillReturnError(errors.New("update failed"))
 
@@ -246,7 +256,7 @@ func TestEnvelopeGroupRepository_UpdateEnvelopeGroup(t *testing.T) {
 			IsSystem: false,
 		}
 
-		mock.ExpectExec("UPDATE envelope_groups").
+		mock.ExpectExec("UPDATE envelope_group").
 			WithArgs(group.Name, group.IsSystem, group.ID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -275,7 +285,7 @@ func TestEnvelopeGroupRepository_DeleteEnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("Exec Error", func(t *testing.T) {
-		mock.ExpectExec("DELETE FROM envelope_groups").
+		mock.ExpectExec("DELETE FROM envelope_group").
 			WithArgs(validID).
 			WillReturnError(errors.New("delete failed"))
 
@@ -286,7 +296,7 @@ func TestEnvelopeGroupRepository_DeleteEnvelopeGroup(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		mock.ExpectExec("DELETE FROM envelope_groups").
+		mock.ExpectExec("DELETE FROM envelope_group").
 			WithArgs(validID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 

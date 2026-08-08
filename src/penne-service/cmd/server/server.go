@@ -8,6 +8,7 @@ import (
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -117,9 +118,14 @@ func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 				return
 			}
 
-			token := strings.TrimPrefix(authToken, "Bearer ")
+			tokenStr := strings.TrimPrefix(authToken, "Bearer ")
+			tokenUUID, err := uuid.Parse(tokenStr)
+			if err != nil {
+				http.Error(w, "Invalid token format", http.StatusUnauthorized)
+				return
+			}
 
-			userToken, err := Tokenrepo.GetToken(token)
+			userToken, err := Tokenrepo.GetToken(tokenUUID)
 
 			if err != nil {
 				http.Error(w, "Invalid token", http.StatusUnauthorized)

@@ -23,8 +23,8 @@ func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, lo
 
 func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	var txn core.Transaction
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -37,7 +37,7 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 
 	txn.UserUUID = userUUID
 
-	if err := h.transactionRepo.CreateTransaction(&txn); err != nil {
+	if _, err := h.transactionRepo.CreateTransaction(&txn, nil); err != nil {
 		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to create transaction", zap.Error(err))
 		return
@@ -47,8 +47,9 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 }
 
 func (h *TransactionServiceHandler) GetTransactionByUUID(w http.ResponseWriter, r *http.Request) {
-	txnUUID := r.URL.Query().Get("txn_uuid")
-	if txnUUID == "" || uuid.Validate(txnUUID) != nil {
+	txnUUIDStr := r.URL.Query().Get("txn_uuid")
+	txnUUID, err := uuid.Parse(txnUUIDStr)
+	if err != nil || txnUUID == uuid.Nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Invalid request payload")
 		return
@@ -57,7 +58,7 @@ func (h *TransactionServiceHandler) GetTransactionByUUID(w http.ResponseWriter, 
 	txn, err := h.transactionRepo.GetTransactionByUUID(txnUUID)
 	if err != nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
-		h.logger.Error("Transaction not found", zap.String("uuid", txnUUID), zap.Error(err))
+		h.logger.Error("Transaction not found", zap.String("uuid", txnUUIDStr), zap.Error(err))
 		return
 	}
 
@@ -66,17 +67,22 @@ func (h *TransactionServiceHandler) GetTransactionByUUID(w http.ResponseWriter, 
 }
 
 func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID := r.URL.Query().Get("user_uuid")
-	if userUUID == "" || uuid.Validate(userUUID) != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
-		h.logger.Error("Invalid request payload")
-		return
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		userUUIDStr := r.URL.Query().Get("user_uuid")
+		var err error
+		userUUID, err = uuid.Parse(userUUIDStr)
+		if err != nil || userUUID == uuid.Nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			h.logger.Error("Invalid request payload")
+			return
+		}
 	}
 
 	txs, err := h.transactionRepo.GetTransactionsByUserUUID(userUUID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve transactions", http.StatusInternalServerError)
-		h.logger.Error("Failed to retrieve transactions", zap.String("user_uuid", userUUID), zap.Error(err))
+		h.logger.Error("Failed to retrieve transactions", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		return
 	}
 
@@ -86,8 +92,8 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 
 func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	var txn core.Transaction
-	userUUID, ok := r.Context().Value("user_uuid").(string)
-	if !ok || userUUID == "" {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
 		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
 		h.logger.Error("No user UUID found in request context")
 		return
@@ -107,16 +113,20 @@ func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *
 }
 
 func (h *TransactionServiceHandler) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
-	userUUID := r.Context().Value("user_uuid").(string)
-	if userUUID == "" || uuid.Validate(userUUID) != nil {
+	txnUUIDStr := r.URL.Query().Get("uuid")
+	if txnUUIDStr == "" {
+		txnUUIDStr = r.URL.Query().Get("txn_uuid")
+	}
+	txnUUID, err := uuid.Parse(txnUUIDStr)
+	if err != nil || txnUUID == uuid.Nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Invalid request payload")
 		return
 	}
 
-	if err := h.transactionRepo.DeleteTransaction(userUUID); err != nil {
+	if err := h.transactionRepo.DeleteTransaction(txnUUID); err != nil {
 		http.Error(w, "Failed to delete transaction", http.StatusInternalServerError)
-		h.logger.Error("Failed to delete transaction", zap.String("uuid", userUUID), zap.Error(err))
+		h.logger.Error("Failed to delete transaction", zap.String("uuid", txnUUIDStr), zap.Error(err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

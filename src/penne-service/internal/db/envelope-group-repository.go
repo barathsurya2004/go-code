@@ -17,28 +17,31 @@ func NewEnvelopeGroupRepository(db *sql.DB) core.EnvelopeGroupRepository {
 	return &EnvelopeGroupRepository{db: db}
 }
 
-func (r *EnvelopeGroupRepository) CreateEnvelopeGroup(envelopeGroup *core.EnvelopeGroup) error {
+func (r *EnvelopeGroupRepository) CreateEnvelopeGroup(envelopeGroup *core.EnvelopeGroup, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO envelope_groups (user_uuid, name, is_system)
-		VALUES ($1, $2, $3)
+		INSERT INTO envelope_group (user_uuid, name, is_system)
+		VALUES ($1, $2, $3) RETURNING id
 	`
 
 	if strings.TrimSpace(envelopeGroup.Name) == "" {
-		return errors.New("envelope group name is required")
+		return uuid.Nil, errors.New("envelope group name is required")
 	}
 
-	_, err := r.db.Exec(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem)
-	return err
+	if err := Tx.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem).Scan(&envelopeGroup.ID); err != nil {
+		return uuid.Nil, err
+	}
+
+	return envelopeGroup.ID, nil
 }
 
 func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) {
 	query := `
 		SELECT id, user_uuid, name, is_system
-		FROM envelope_groups
+		FROM envelope_group
 		WHERE id = $1
 	`
 
-	if id == uuid.Nil || uuid.Validate(id.String()) != nil {
+	if id == uuid.Nil {
 		return nil, errors.New("envelope group ID is invalid")
 	}
 
@@ -57,14 +60,14 @@ func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.Enve
 	return envelopeGroup, nil
 }
 
-func (r *EnvelopeGroupRepository) GetEnvelopeGroupsByUserUUID(userUUID string) ([]*core.EnvelopeGroup, error) {
+func (r *EnvelopeGroupRepository) GetEnvelopeGroupsByUserUUID(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 	query := `
 		SELECT id, user_uuid, name, is_system
-		FROM envelope_groups
+		FROM envelope_group
 		WHERE user_uuid = $1
 	`
 
-	if err := uuid.Validate(userUUID); err != nil {
+	if userUUID == uuid.Nil {
 		return nil, errors.New("user UUID is invalid")
 	}
 
@@ -99,7 +102,7 @@ func (r *EnvelopeGroupRepository) GetEnvelopeGroupsByUserUUID(userUUID string) (
 
 func (r *EnvelopeGroupRepository) UpdateEnvelopeGroup(envelopeGroup *core.EnvelopeGroup) error {
 	query := `
-		UPDATE envelope_groups
+		UPDATE envelope_group
 		SET name = $1, is_system = $2
 		WHERE id = $3
 	`
@@ -118,7 +121,7 @@ func (r *EnvelopeGroupRepository) UpdateEnvelopeGroup(envelopeGroup *core.Envelo
 
 func (r *EnvelopeGroupRepository) DeleteEnvelopeGroup(id uuid.UUID) error {
 	query := `
-		DELETE FROM envelope_groups
+		DELETE FROM envelope_group
 		WHERE id = $1
 	`
 

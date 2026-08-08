@@ -17,7 +17,7 @@ func NewPgEnvelopeRepo(db *sql.DB) core.EnvelopeRepository {
 	}
 }
 
-func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope) error {
+func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
 		INSERT INTO envelope (
 			user_uuid,
@@ -29,9 +29,9 @@ func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope) error {
 			updated_at,
 			is_system
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
 	`
-	_, err := r.db.Exec(
+	if err := Tx.QueryRow(
 		query,
 		envelope.UserUUID,
 		envelope.EnvelopeGroupID,
@@ -41,8 +41,10 @@ func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope) error {
 		envelope.CreatedAt,
 		envelope.UpdatedAt,
 		envelope.IsSystem,
-	)
-	return err
+	).Scan(&envelope.ID); err != nil {
+		return uuid.Nil, err
+	}
+	return envelope.ID, nil
 }
 
 func (r *pgEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) {
@@ -69,7 +71,7 @@ func (r *pgEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) {
 	return envelope, nil
 }
 
-func (r *pgEnvelopeRepo) GetEnvelopesByUserUUID(userUUID string) ([]*core.Envelope, error) {
+func (r *pgEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.Envelope, error) {
 	query := `
 		SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system
 		FROM envelope

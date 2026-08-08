@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -11,22 +13,37 @@ import (
 )
 
 type UserServiceHandler struct {
-	userRepo      core.UserRepository
-	userTokenRepo core.TokenRepository
-	Logger        *zap.Logger
+	userRepo       core.UserRepository
+	userTokenRepo  core.TokenRepository
+	envGroupRepo   core.EnvelopeGroupRepository
+	envelopeRepo   core.EnvelopeRepository
+	allocationRepo core.AllocationRepository
+	Logger         *zap.Logger
+	db             *sql.DB
 }
 
-func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.TokenRepository, logger *zap.Logger) *UserServiceHandler {
+func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.TokenRepository, logger *zap.Logger, envGroupRepo core.EnvelopeGroupRepository, envelopeRepo core.EnvelopeRepository, allocationRepo core.AllocationRepository, db *sql.DB) *UserServiceHandler {
 	return &UserServiceHandler{
-		userRepo:      userRepo,
-		userTokenRepo: userTokenRepo,
-		Logger:        logger,
+		userRepo:       userRepo,
+		userTokenRepo:  userTokenRepo,
+		envGroupRepo:   envGroupRepo,
+		envelopeRepo:   envelopeRepo,
+		allocationRepo: allocationRepo,
+		Logger:         logger,
+		db:             db,
 	}
 }
 
 func (h *UserServiceHandler) GetUserByUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID := r.Context().Value("user_uuid").(string)
-	if userUUID == "" {
+	var userUUID uuid.UUID
+	if val := r.Context().Value("user_uuid"); val != nil {
+		if id, ok := val.(uuid.UUID); ok {
+			userUUID = id
+		} else if idStr, ok := val.(string); ok && idStr != "" {
+			userUUID, _ = uuid.Parse(idStr)
+		}
+	}
+	if userUUID == uuid.Nil {
 		http.Error(w, "Missing user UUID", http.StatusBadRequest)
 		h.Logger.Error("Missing user UUID")
 		return
@@ -35,7 +52,7 @@ func (h *UserServiceHandler) GetUserByUUID(w http.ResponseWriter, r *http.Reques
 	user, err := h.userRepo.GetUserByUUID(userUUID)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
-		h.Logger.Error("User not found", zap.String("user_uuid", userUUID), zap.Error(err))
+		h.Logger.Error("User not found", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		return
 	}
 
@@ -52,19 +69,90 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if user.UUID == "" {
-		user.UUID = uuid.NewString()
+	// create a transaction
+
+	tx, err := h.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+		h.Logger.Error("Failed to begin transaction", zap.Error(err))
+		return
 	}
 
-	if err := h.userRepo.CreateUser(&user); err != nil {
+	userUUID, err := h.userRepo.CreateUser(&user, tx)
+	if err != nil {
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		h.Logger.Error("Failed to create user", zap.Error(err))
+		tx.Rollback()
 		return
 	}
 
 	now := time.Now()
+
+	//create a new envGroup for this user with is_system = true (unallocated budget)
+
+	envGroup := core.EnvelopeGroup{
+		ID:        uuid.New(),
+		UserUUID:  userUUID,
+		Name:      "Unallocated Budget",
+		IsSystem:  true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	envGroupUUID, err := h.envGroupRepo.CreateEnvelopeGroup(&envGroup, tx)
+	if err != nil {
+		h.Logger.Error("Failed to create envelope group", zap.Error(err))
+		tx.Rollback()
+		http.Error(w, "Failed to create envelope group", http.StatusInternalServerError)
+		return
+	}
+
+	// create a new env for this user with unallocated budget group
+
+	env := core.Envelope{
+		UserUUID:        userUUID,
+		EnvelopeGroupID: envGroupUUID,
+		TargetAmountE5:  0,
+		Cadence:         "monthly",
+		CountryISO:      "IN",
+		IsSystem:        true,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	envUUID, err := h.envelopeRepo.CreateEnvelope(&env, tx)
+	if err != nil {
+		http.Error(w, "Failed to create envelope ", http.StatusInternalServerError)
+		h.Logger.Error("Failed to create envelope", zap.Error(err))
+		tx.Rollback()
+		return
+	}
+
+	// create a new allocation from now to 100 years from now with 0 amount
+
+	endDate := now.AddDate(100, 0, 0)
+	alloc := core.Allocation{
+		EnvelopeID:        envUUID,
+		AllocatedAmountE5: 0,
+		StartDate:         &now,
+		EndDate:           &endDate,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	if _, err = h.allocationRepo.CreateAllocation(&alloc, tx); err != nil {
+		http.Error(w, "Failed to create allocation", http.StatusInternalServerError)
+		h.Logger.Error("Failed to create allocation", zap.Error(err))
+		tx.Rollback()
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		h.Logger.Error("Failed to commit transaction", zap.Error(err))
+		return
+	}
 	var token core.Token
-	token.UserUUID = user.UUID
+	token.UserUUID = userUUID
 	token.Prefix = core.AuthToken
 	token.Name = core.DefaultName
 	token.Scope = []string{"all"}
@@ -73,7 +161,7 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 	token.CreatedAt = now
 	token.UpdatedAt = now
 
-	userAuthToken, err := h.userTokenRepo.CreateToken(&token)
+	userAuthToken, err := h.userTokenRepo.CreateToken(&token, nil)
 	if err != nil {
 		http.Error(w, "Failed to create token", http.StatusInternalServerError)
 		h.Logger.Error("Failed to create token", zap.Error(err))
