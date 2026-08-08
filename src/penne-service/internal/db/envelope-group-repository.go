@@ -13,7 +13,7 @@ type EnvelopeGroupRepository struct {
 	db *sql.DB
 }
 
-func NewEnvelopeGroupRepository(db *sql.DB) *EnvelopeGroupRepository {
+func NewEnvelopeGroupRepository(db *sql.DB) core.EnvelopeGroupRepository {
 	return &EnvelopeGroupRepository{db: db}
 }
 

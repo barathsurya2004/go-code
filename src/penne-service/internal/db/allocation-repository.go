@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
@@ -44,6 +45,34 @@ func (r *pgAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*
 		WHERE envelope_id = $1
 	`
 	rows, err := r.db.Query(query, envelopeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	allocations := []*core.Allocation{}
+	for rows.Next() {
+		allocation := &core.Allocation{}
+		err := rows.Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
+		if err != nil {
+			return nil, err
+		}
+		allocations = append(allocations, allocation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return allocations, nil
+}
+
+func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+	query := `
+		SELECT a.id, a.envelope_id, a.amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date
+		FROM allocation a
+		JOIN envelope e ON a.envelope_id = e.id
+		WHERE e.user_uuid = $1
+		  AND $2::date BETWEEN a.start_date AND a.end_date
+	`
+	rows, err := r.db.Query(query, userUUID, targetDate)
 	if err != nil {
 		return nil, err
 	}

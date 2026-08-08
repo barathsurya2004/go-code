@@ -182,6 +182,75 @@ func TestPgAllocationRepo_GetAllocationsByEnvelopeID(t *testing.T) {
 	})
 }
 
+func TestPgAllocationRepo_GetActiveAllocationsByUserUUID(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgAllocationRepo(db)
+	userUUID := "123e4567-e89b-12d3-a456-426614174000"
+	now := time.Now()
+
+	t.Run("Query Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnError(errors.New("query error"))
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now)
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("Scan Error", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id"}).AddRow("invalid")
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now)
+		if err == nil {
+			t.Error("expected scan error, got nil")
+		}
+	})
+
+	t.Run("Row Iteration Error", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "envelope_id", "amount_e5", "created_at", "updated_at", "start_date", "end_date"}).
+			AddRow(uuid.New(), uuid.New(), 100000.0, now, now, now, now).
+			RowError(0, errors.New("iteration error"))
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now)
+		if err == nil {
+			t.Error("expected rows.Err() error, got nil")
+		}
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		allocID := uuid.New()
+		envelopeID := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "envelope_id", "amount_e5", "created_at", "updated_at", "start_date", "end_date"}).
+			AddRow(allocID, envelopeID, 150000.0, now, now, now, now)
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		results, err := repo.GetActiveAllocationsByUserUUID(userUUID, now)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 allocation, got %d", len(results))
+		}
+	})
+}
+
 func TestPgAllocationRepo_UpdateAllocation(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

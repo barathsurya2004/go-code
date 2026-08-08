@@ -9,4 +9,7 @@ var Module = fx.Module(
 	fx.Provide(NewPgTransactionRowsRepo),
 	fx.Provide(NewPgUserRepo),
 	fx.Provide(NewTokenRepo),
+	fx.Provide(NewEnvelopeGroupRepository),
+	fx.Provide(NewPgEnvelopeRepo),
+	fx.Provide(NewPgAllocationRepo),
 )

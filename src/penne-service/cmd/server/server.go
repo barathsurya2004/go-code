@@ -21,17 +21,20 @@ func NewMux() *mux.Router {
 type Application struct {
 	transactionHandler *handlers.TransactionServiceHandler
 	userHandler        *handlers.UserServiceHandler
+	budgetingHandler   *handlers.BudgetingServiceHandler
 	tokenRepo          core.TokenRepository
 }
 
 func NewApplication(
 	transactionHandler *handlers.TransactionServiceHandler,
 	userHandler *handlers.UserServiceHandler,
+	budgetingHandler *handlers.BudgetingServiceHandler,
 	tokenRepo core.TokenRepository,
 ) *Application {
 	return &Application{
 		transactionHandler: transactionHandler,
 		userHandler:        userHandler,
+		budgetingHandler:   budgetingHandler,
 		tokenRepo:          tokenRepo,
 	}
 }
@@ -53,6 +56,28 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transactions", app.transactionHandler.GetTransactionsByUserUUID).Methods("GET")
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
+
+	// envelope group endpoints
+	mux.HandleFunc("/envelope-group", app.budgetingHandler.CreateEnvelopeGroup).Methods("POST")
+	mux.HandleFunc("/envelope-group", app.budgetingHandler.GetEnvelopeGroupByID).Methods("GET")
+	mux.HandleFunc("/envelope-groups", app.budgetingHandler.GetEnvelopeGroupsByUserUUID).Methods("GET")
+	mux.HandleFunc("/envelope-group", app.budgetingHandler.UpdateEnvelopeGroup).Methods("PUT")
+	mux.HandleFunc("/envelope-group", app.budgetingHandler.DeleteEnvelopeGroup).Methods("DELETE")
+
+	// envelope endpoints
+	mux.HandleFunc("/envelope", app.budgetingHandler.CreateEnvelope).Methods("POST")
+	mux.HandleFunc("/envelope", app.budgetingHandler.GetEnvelopeByID).Methods("GET")
+	mux.HandleFunc("/envelopes", app.budgetingHandler.GetEnvelopesByUserUUID).Methods("GET")
+	mux.HandleFunc("/envelope", app.budgetingHandler.UpdateEnvelope).Methods("PUT")
+	mux.HandleFunc("/envelope", app.budgetingHandler.DeleteEnvelope).Methods("DELETE")
+
+	// allocation endpoints
+	mux.HandleFunc("/allocation", app.budgetingHandler.CreateAllocation).Methods("POST")
+	mux.HandleFunc("/allocation", app.budgetingHandler.GetAllocationByID).Methods("GET")
+	mux.HandleFunc("/allocations", app.budgetingHandler.GetAllocationsByEnvelopeID).Methods("GET")
+	mux.HandleFunc("/allocations/active", app.budgetingHandler.GetActiveAllocationsByUserUUID).Methods("GET")
+	mux.HandleFunc("/allocation", app.budgetingHandler.UpdateAllocation).Methods("PUT")
+	mux.HandleFunc("/allocation", app.budgetingHandler.DeleteAllocation).Methods("DELETE")
 
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }

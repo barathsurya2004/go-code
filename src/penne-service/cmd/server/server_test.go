@@ -49,11 +49,45 @@ func (d *dummyTxnRepo) GetTransactionsByUserUUID(id string) ([]*core.Transaction
 func (d *dummyTxnRepo) UpdateTransaction(t *core.Transaction) error                   { return nil }
 func (d *dummyTxnRepo) DeleteTransaction(id string) error                            { return nil }
 
+type dummyEnvelopeGroupRepo struct{}
+
+func (d *dummyEnvelopeGroupRepo) CreateEnvelopeGroup(g *core.EnvelopeGroup) error                 { return nil }
+func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) { return nil, nil }
+func (d *dummyEnvelopeGroupRepo) GetEnvelopeGroupsByUserUUID(id string) ([]*core.EnvelopeGroup, error) {
+	return nil, nil
+}
+func (d *dummyEnvelopeGroupRepo) UpdateEnvelopeGroup(g *core.EnvelopeGroup) error { return nil }
+func (d *dummyEnvelopeGroupRepo) DeleteEnvelopeGroup(id uuid.UUID) error          { return nil }
+
+type dummyEnvelopeRepo struct{}
+
+func (d *dummyEnvelopeRepo) CreateEnvelope(e *core.Envelope) error                 { return nil }
+func (d *dummyEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) { return nil, nil }
+func (d *dummyEnvelopeRepo) GetEnvelopesByUserUUID(id string) ([]*core.Envelope, error) {
+	return nil, nil
+}
+func (d *dummyEnvelopeRepo) UpdateEnvelope(e *core.Envelope) error { return nil }
+func (d *dummyEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error          { return nil }
+
+type dummyAllocationRepo struct{}
+
+func (d *dummyAllocationRepo) CreateAllocation(a *core.Allocation) error                 { return nil }
+func (d *dummyAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) { return nil, nil }
+func (d *dummyAllocationRepo) GetAllocationsByEnvelopeID(id uuid.UUID) ([]*core.Allocation, error) {
+	return nil, nil
+}
+func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID string, targetDate time.Time) ([]*core.Allocation, error) {
+	return nil, nil
+}
+func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
+func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error          { return nil }
+
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
 	tokenRepo := &dummyTokenRepo{}
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log)
+	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log)
 
 	t.Run("NewMux", func(t *testing.T) {
 		m := NewMux()
@@ -63,15 +97,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, tokenRepo)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.tokenRepo != tokenRepo {
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo {
 			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, tokenRepo)
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

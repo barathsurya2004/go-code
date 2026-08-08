@@ -114,6 +114,7 @@ type AllocationRepository interface {
 	CreateAllocation(allocation *Allocation) error
 	GetAllocationByID(id uuid.UUID) (*Allocation, error)
 	GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*Allocation, error)
+	GetActiveAllocationsByUserUUID(userUUID string, targetDate time.Time) ([]*Allocation, error)
 	UpdateAllocation(allocation *Allocation) error
 	DeleteAllocation(id uuid.UUID) error
 }
