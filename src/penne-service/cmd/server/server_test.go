@@ -75,7 +75,6 @@ func TestServer(t *testing.T) {
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)
-		req.Header.Set("Authorization", "Bearer valid")
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
 
@@ -89,7 +88,6 @@ func TestServer(t *testing.T) {
 
 		// Test user endpoints
 		reqUserPost := httptest.NewRequest("POST", "/user", io.NopCloser(bytes.NewReader([]byte(`{"name":"Alice"}`))))
-		reqUserPost.Header.Set("Authorization", "Bearer valid")
 		rrUserPost := httptest.NewRecorder()
 		router.ServeHTTP(rrUserPost, reqUserPost)
 		if rrUserPost.Code != http.StatusCreated {
@@ -154,6 +152,26 @@ func TestServer(t *testing.T) {
 		})
 
 		handler := middleware(nextHandler)
+
+		t.Run("Health Check Bypass", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/health", nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("expected status 200 for health check bypass, got %d", rr.Code)
+			}
+		})
+
+		t.Run("Create User Bypass", func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/user", nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("expected status 200 for create user bypass, got %d", rr.Code)
+			}
+		})
 
 		t.Run("Missing Authorization Header", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/test", nil)

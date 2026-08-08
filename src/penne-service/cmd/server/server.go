@@ -81,6 +81,11 @@ func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Serv
 func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			authToken := r.Header.Get("Authorization")
 			if authToken == "" {
 				http.Error(w, "Authorization header is missing", http.StatusUnauthorized)
