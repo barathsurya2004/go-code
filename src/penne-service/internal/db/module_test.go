@@ -12,6 +12,7 @@ import (
 func TestModule(t *testing.T) {
 	var userRepo core.UserRepository
 	var txnRepo core.TransactionRepository
+	var tokenRepo core.TokenRepository
 
 	app := fx.New(
 		Module,
@@ -20,10 +21,10 @@ func TestModule(t *testing.T) {
 			db, _, err := sqlmock.New()
 			return db, err
 		}),
-		fx.Populate(&userRepo, &txnRepo),
+		fx.Populate(&userRepo, &txnRepo, &tokenRepo),
 	)
 
-	if userRepo == nil || txnRepo == nil {
+	if userRepo == nil || txnRepo == nil || tokenRepo == nil {
 		t.Fatal("expected populated repositories from db.Module")
 	}
 	_ = app

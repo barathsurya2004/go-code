@@ -9,10 +9,20 @@ import (
 )
 
 func TestCreateConfig(t *testing.T) {
-	cfg := CreateConfig()
-	if cfg.DSN == "" {
-		t.Error("expected non-empty DSN in CreateConfig")
-	}
+	t.Run("Default Config", func(t *testing.T) {
+		cfg := CreateConfig()
+		if cfg.DSN == "" {
+			t.Error("expected non-empty DSN in CreateConfig")
+		}
+	})
+
+	t.Run("Env DATABASE_URL Config", func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://user:pass@host:5432/dbname?sslmode=disable")
+		cfg := CreateConfig()
+		if cfg.DSN != "postgres://user:pass@host:5432/dbname?sslmode=disable" {
+			t.Errorf("expected custom DSN from env, got %s", cfg.DSN)
+		}
+	})
 }
 
 func TestNewDb(t *testing.T) {

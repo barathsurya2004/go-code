@@ -6,9 +6,7 @@ import (
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
-	mcpserver "github.com/barathsurya2004/go-code/penne-service/internal/server"
 	"github.com/gorilla/mux"
-	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -21,20 +19,17 @@ func NewMux() *mux.Router {
 type Application struct {
 	transactionHandler *handlers.TransactionServiceHandler
 	userHandler        *handlers.UserServiceHandler
-	mcpServer          *server.StreamableHTTPServer
 	tokenRepo          core.TokenRepository
 }
 
 func NewApplication(
 	transactionHandler *handlers.TransactionServiceHandler,
 	userHandler *handlers.UserServiceHandler,
-	mcpServer *server.StreamableHTTPServer,
 	tokenRepo core.TokenRepository,
 ) *Application {
 	return &Application{
 		transactionHandler: transactionHandler,
 		userHandler:        userHandler,
-		mcpServer:          mcpServer,
 		tokenRepo:          tokenRepo,
 	}
 }
@@ -57,34 +52,6 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
 
-	// Public RFC 8414 OAuth 2.0 Authorization Server Metadata
-	authServerMetadataPaths := []string{
-		"/.well-known/oauth-authorization-server",
-		"/.well-known/openid-configuration",
-	}
-	for _, path := range authServerMetadataPaths {
-		mux.HandleFunc(path, mcpserver.OAuthMetadataHandler)
-	}
-
-	// Public RFC 9728 OAuth 2.0 Protected Resource Metadata
-	protectedResourceMetadataPaths := []string{
-		"/.well-known/oauth-protected-resource",
-		"/.well-known/oauth-protected-resource/sse",
-	}
-	for _, path := range protectedResourceMetadataPaths {
-		mux.HandleFunc(path, mcpserver.ProtectedResourceMetadataHandler)
-	}
-
-	mux.HandleFunc("/oauth/authorize", mcpserver.OAuthAuthorizeHandler)
-	mux.HandleFunc("/oauth/token", mcpserver.OAuthTokenHandler)
-
-	// mcp endpoints protected by auth middleware
-	if app.mcpServer != nil {
-		mcpHandler := mcpserver.MCPAuthMiddleWare(app.mcpServer)
-		mux.Handle("/sse", mcpHandler)
-		mux.Handle("/mcp", mcpHandler)
-		mux.Handle("/message", mcpHandler)
-	}
 }
 
 func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Server {

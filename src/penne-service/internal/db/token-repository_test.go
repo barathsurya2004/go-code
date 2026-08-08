@@ -149,7 +149,7 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"user_id", "token_uuid", "prefix", "name", "scopes", "expires_at", "last_used_at", "created_at", "updated_at"}).
-			AddRow(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, nil, now, now)
+			AddRow(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, now, now, now)
 
 		mock.ExpectQuery("SELECT user_id, token_uuid").
 			WithArgs(userUUID).
@@ -159,7 +159,7 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if token.UserUUID != userUUID || token.Token != tokenUUID || len(token.Scope) != 1 || token.Scope[0] != "all" {
+		if token.UserUUID != userUUID || token.Token != tokenUUID || len(token.Scope) != 1 || token.Scope[0] != "all" || token.ExpiresAt == nil || token.LastUsedAt == nil {
 			t.Errorf("unexpected token returned: %+v", token)
 		}
 	})
@@ -199,7 +199,7 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 		now := time.Now()
 
 		rows := sqlmock.NewRows([]string{"user_id", "token_uuid", "prefix", "name", "scopes", "expires_at", "last_used_at", "created_at", "updated_at"}).
-			AddRow(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, nil, now, now)
+			AddRow(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, now, now, now)
 
 		mock.ExpectQuery("SELECT user_id, token_uuid").
 			WithArgs(tokenUUID).
@@ -209,7 +209,7 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if token.UserUUID != userUUID || token.Token != tokenUUID {
+		if token.UserUUID != userUUID || token.Token != tokenUUID || token.ExpiresAt == nil || token.LastUsedAt == nil {
 			t.Errorf("unexpected token returned: %+v", token)
 		}
 	})

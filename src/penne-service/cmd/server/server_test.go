@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -49,15 +50,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, nil, tokenRepo)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler {
-			t.Fatal("expected application initialized with handlers")
+		app := NewApplication(txnHandler, userHandler, tokenRepo)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.tokenRepo != tokenRepo {
+			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, nil, tokenRepo)
+		app := NewApplication(txnHandler, userHandler, tokenRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)
@@ -72,19 +73,55 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected body 'OK(deployment check)', got '%s'", string(body))
 		}
 
-		// Test user and transaction route dispatching
-		reqUser := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		rrUser := httptest.NewRecorder()
-		router.ServeHTTP(rrUser, reqUser)
-		if rrUser.Code != http.StatusOK {
-			t.Errorf("expected status 200 for user route, got %d", rrUser.Code)
+		// Test user endpoints
+		reqUserPost := httptest.NewRequest("POST", "/user", io.NopCloser(bytes.NewReader([]byte(`{"name":"Alice"}`))))
+		rrUserPost := httptest.NewRecorder()
+		router.ServeHTTP(rrUserPost, reqUserPost)
+		if rrUserPost.Code != http.StatusCreated {
+			t.Errorf("expected status 201 for POST /user route, got %d", rrUserPost.Code)
 		}
 
-		reqTxn := httptest.NewRequest("GET", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
-		rrTxn := httptest.NewRecorder()
-		router.ServeHTTP(rrTxn, reqTxn)
-		if rrTxn.Code != http.StatusOK {
-			t.Errorf("expected status 200 for transaction route, got %d", rrTxn.Code)
+		reqUserGet := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		rrUserGet := httptest.NewRecorder()
+		router.ServeHTTP(rrUserGet, reqUserGet)
+		if rrUserGet.Code != http.StatusOK {
+			t.Errorf("expected status 200 for GET /user route, got %d", rrUserGet.Code)
+		}
+
+		// Test transaction endpoints
+		reqTxnPost := httptest.NewRequest("POST", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"amount_e5":100}`))))
+		rrTxnPost := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnPost, reqTxnPost)
+		if rrTxnPost.Code != http.StatusCreated {
+			t.Errorf("expected status 201 for POST /transaction route, got %d", rrTxnPost.Code)
+		}
+
+		reqTxnGet := httptest.NewRequest("GET", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		rrTxnGet := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnGet, reqTxnGet)
+		if rrTxnGet.Code != http.StatusOK {
+			t.Errorf("expected status 200 for GET /transaction route, got %d", rrTxnGet.Code)
+		}
+
+		reqTxnsGet := httptest.NewRequest("GET", "/transactions?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		rrTxnsGet := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnsGet, reqTxnsGet)
+		if rrTxnsGet.Code != http.StatusOK {
+			t.Errorf("expected status 200 for GET /transactions route, got %d", rrTxnsGet.Code)
+		}
+
+		reqTxnPut := httptest.NewRequest("PUT", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"uuid":"123e4567-e89b-12d3-a456-426614174000"}`))))
+		rrTxnPut := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnPut, reqTxnPut)
+		if rrTxnPut.Code != http.StatusOK {
+			t.Errorf("expected status 200 for PUT /transaction route, got %d", rrTxnPut.Code)
+		}
+
+		reqTxnDelete := httptest.NewRequest("DELETE", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		rrTxnDelete := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnDelete, reqTxnDelete)
+		if rrTxnDelete.Code != http.StatusOK {
+			t.Errorf("expected status 200 for DELETE /transaction route, got %d", rrTxnDelete.Code)
 		}
 	})
 
