@@ -21,7 +21,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 	repo := NewTokenRepo(db)
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		err := repo.CreateToken(&core.Token{})
+		_, err := repo.CreateToken(&core.Token{})
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
@@ -48,7 +48,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnError(errors.New("db error"))
 
-		err := repo.CreateToken(token)
+		_, err := repo.CreateToken(token)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -79,9 +79,12 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		err := repo.CreateToken(token)
+		id, err := repo.CreateToken(token)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
+		}
+		if id.String() == "" {
+			t.Error("expected non-empty token UUID")
 		}
 	})
 }
@@ -204,6 +207,10 @@ func TestPgTokenRepo_GetToken(t *testing.T) {
 		mock.ExpectQuery("SELECT user_id, token_uuid").
 			WithArgs(tokenUUID).
 			WillReturnRows(rows)
+
+		mock.ExpectExec("UPDATE user_tokens").
+			WithArgs(userUUID, tokenUUID, "mcp_", "default", pq.Array([]string{"all"}), now, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		token, err := repo.GetToken(tokenUUID)
 		if err != nil {

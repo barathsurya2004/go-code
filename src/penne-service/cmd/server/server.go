@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -52,6 +54,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
 
+	mux.Use(AuthMiddleware(app.tokenRepo))
 }
 
 func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Server {
@@ -73,4 +76,34 @@ func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Serv
 	})
 
 	return srv
+}
+
+func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authToken := r.Header.Get("Authorization")
+			if authToken == "" {
+				http.Error(w, "Authorization header is missing", http.StatusUnauthorized)
+				return
+			}
+
+			token := strings.TrimPrefix(authToken, "Bearer ")
+
+			userToken, err := Tokenrepo.GetToken(token)
+
+			if err != nil {
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			if userToken.ExpiresAt != nil && userToken.ExpiresAt.Before(time.Now()) {
+				http.Error(w, "Token expired", http.StatusUnauthorized)
+				return
+			}
+			r = r.WithContext(context.WithValue(r.Context(), "user_uuid", userToken.UserUUID))
+
+			next.ServeHTTP(w, r)
+
+		})
+	}
 }

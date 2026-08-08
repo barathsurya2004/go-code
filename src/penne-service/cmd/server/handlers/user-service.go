@@ -25,7 +25,7 @@ func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.Toke
 }
 
 func (h *UserServiceHandler) GetUserByUUID(w http.ResponseWriter, r *http.Request) {
-	userUUID := r.URL.Query().Get("user_uuid")
+	userUUID := r.Context().Value("user_uuid").(string)
 	if userUUID == "" {
 		http.Error(w, "Missing user UUID", http.StatusBadRequest)
 		h.Logger.Error("Missing user UUID")
@@ -65,21 +65,26 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 	now := time.Now()
 	var token core.Token
 	token.UserUUID = user.UUID
-	token.Prefix = "mcp_"
-	token.Name = "default"
+	token.Prefix = core.AuthToken
+	token.Name = core.DefaultName
 	token.Scope = []string{"all"}
 	token.ExpiresAt = nil
 	token.LastUsedAt = nil
 	token.CreatedAt = now
 	token.UpdatedAt = now
 
-	if err := h.userTokenRepo.CreateToken(&token); err != nil {
+	userAuthToken, err := h.userTokenRepo.CreateToken(&token)
+	if err != nil {
 		http.Error(w, "Failed to create token", http.StatusInternalServerError)
 		h.Logger.Error("Failed to create token", zap.Error(err))
 		return
 	}
 
+	type res struct {
+		UserAuthToken string `json:"user_auth_token"`
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(res{UserAuthToken: userAuthToken.String()})
 }

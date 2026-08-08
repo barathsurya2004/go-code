@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Transaction struct {
 	UUID       string    `json:"uuid"`
@@ -47,9 +51,14 @@ type Token struct {
 }
 
 type TokenRepository interface {
-	CreateToken(token *Token) error
+	CreateToken(token *Token) (uuid.UUID, error)
 	DeleteToken(userUUID string) error
 	GetToken(token string) (*Token, error)
 	GetTokenWithUserUUID(userUUID string) (*Token, error)
 	UpdateToken(token *Token) error
 }
+
+const (
+	AuthToken   = "auth_token"
+	DefaultName = "default"
+)

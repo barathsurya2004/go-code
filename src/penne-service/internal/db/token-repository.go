@@ -34,9 +34,9 @@ func nullTime(t time.Time) any {
 	return t
 }
 
-func (r *pgTokenRepo) CreateToken(token *core.Token) error {
+func (r *pgTokenRepo) CreateToken(token *core.Token) (uuid.UUID, error) {
 	if token.UserUUID == "" {
-		return errors.New("user UUID is required")
+		return uuid.Nil, errors.New("user UUID is required")
 	}
 	if token.Token == "" {
 		token.Token = uuid.NewString()
@@ -58,7 +58,11 @@ func (r *pgTokenRepo) CreateToken(token *core.Token) error {
 		nullTime(token.CreatedAt),
 		nullTime(token.UpdatedAt),
 	)
-	return err
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return uuid.Parse(token.Token)
+
 }
 
 func (r *pgTokenRepo) DeleteToken(userUUID string) error {
@@ -144,6 +148,10 @@ func (r *pgTokenRepo) GetToken(token string) (*core.Token, error) {
 	if lastUsedAt.Valid {
 		tokenObj.LastUsedAt = &lastUsedAt.Time
 	}
+
+	timeNow := time.Now()
+	tokenObj.LastUsedAt = &timeNow
+	r.UpdateToken(tokenObj)
 
 	return tokenObj, nil
 }

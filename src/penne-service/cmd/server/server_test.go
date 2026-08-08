@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/google/uuid"
 	"go.uber.org/fx/fxtest"
 	"go.uber.org/zap"
 )
@@ -22,9 +24,20 @@ func (d *dummyUserRepo) GetUserByUUID(id string) (*core.User, error) { return ni
 
 type dummyTokenRepo struct{}
 
-func (d *dummyTokenRepo) CreateToken(t *core.Token) error                           { return nil }
-func (d *dummyTokenRepo) DeleteToken(userUUID string) error                        { return nil }
-func (d *dummyTokenRepo) GetToken(token string) (*core.Token, error)                { return nil, nil }
+func (d *dummyTokenRepo) CreateToken(t *core.Token) (uuid.UUID, error) {
+	return uuid.MustParse("123e4567-e89b-12d3-a456-426614174000"), nil
+}
+func (d *dummyTokenRepo) DeleteToken(userUUID string) error { return nil }
+func (d *dummyTokenRepo) GetToken(token string) (*core.Token, error) {
+	if token == "invalid" {
+		return nil, errors.New("invalid token")
+	}
+	if token == "expired" {
+		past := time.Now().Add(-1 * time.Hour)
+		return &core.Token{UserUUID: "123e4567-e89b-12d3-a456-426614174000", ExpiresAt: &past}, nil
+	}
+	return &core.Token{UserUUID: "123e4567-e89b-12d3-a456-426614174000"}, nil
+}
 func (d *dummyTokenRepo) GetTokenWithUserUUID(userUUID string) (*core.Token, error) { return nil, nil }
 func (d *dummyTokenRepo) UpdateToken(t *core.Token) error                           { return nil }
 
@@ -62,6 +75,7 @@ func TestServer(t *testing.T) {
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)
+		req.Header.Set("Authorization", "Bearer valid")
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
 
@@ -75,6 +89,7 @@ func TestServer(t *testing.T) {
 
 		// Test user endpoints
 		reqUserPost := httptest.NewRequest("POST", "/user", io.NopCloser(bytes.NewReader([]byte(`{"name":"Alice"}`))))
+		reqUserPost.Header.Set("Authorization", "Bearer valid")
 		rrUserPost := httptest.NewRecorder()
 		router.ServeHTTP(rrUserPost, reqUserPost)
 		if rrUserPost.Code != http.StatusCreated {
@@ -82,6 +97,7 @@ func TestServer(t *testing.T) {
 		}
 
 		reqUserGet := httptest.NewRequest("GET", "/user?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		reqUserGet.Header.Set("Authorization", "Bearer valid")
 		rrUserGet := httptest.NewRecorder()
 		router.ServeHTTP(rrUserGet, reqUserGet)
 		if rrUserGet.Code != http.StatusOK {
@@ -90,6 +106,7 @@ func TestServer(t *testing.T) {
 
 		// Test transaction endpoints
 		reqTxnPost := httptest.NewRequest("POST", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"amount_e5":100}`))))
+		reqTxnPost.Header.Set("Authorization", "Bearer valid")
 		rrTxnPost := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnPost, reqTxnPost)
 		if rrTxnPost.Code != http.StatusCreated {
@@ -97,6 +114,7 @@ func TestServer(t *testing.T) {
 		}
 
 		reqTxnGet := httptest.NewRequest("GET", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		reqTxnGet.Header.Set("Authorization", "Bearer valid")
 		rrTxnGet := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnGet, reqTxnGet)
 		if rrTxnGet.Code != http.StatusOK {
@@ -104,6 +122,7 @@ func TestServer(t *testing.T) {
 		}
 
 		reqTxnsGet := httptest.NewRequest("GET", "/transactions?user_uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		reqTxnsGet.Header.Set("Authorization", "Bearer valid")
 		rrTxnsGet := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnsGet, reqTxnsGet)
 		if rrTxnsGet.Code != http.StatusOK {
@@ -111,6 +130,7 @@ func TestServer(t *testing.T) {
 		}
 
 		reqTxnPut := httptest.NewRequest("PUT", "/transaction", io.NopCloser(bytes.NewReader([]byte(`{"uuid":"123e4567-e89b-12d3-a456-426614174000"}`))))
+		reqTxnPut.Header.Set("Authorization", "Bearer valid")
 		rrTxnPut := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnPut, reqTxnPut)
 		if rrTxnPut.Code != http.StatusOK {
@@ -118,11 +138,69 @@ func TestServer(t *testing.T) {
 		}
 
 		reqTxnDelete := httptest.NewRequest("DELETE", "/transaction?uuid=123e4567-e89b-12d3-a456-426614174000", nil)
+		reqTxnDelete.Header.Set("Authorization", "Bearer valid")
 		rrTxnDelete := httptest.NewRecorder()
 		router.ServeHTTP(rrTxnDelete, reqTxnDelete)
 		if rrTxnDelete.Code != http.StatusOK {
 			t.Errorf("expected status 200 for DELETE /transaction route, got %d", rrTxnDelete.Code)
 		}
+	})
+
+	t.Run("AuthMiddleware", func(t *testing.T) {
+		middleware := AuthMiddleware(tokenRepo)
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userUUID, _ := r.Context().Value("user_uuid").(string)
+			w.Write([]byte(userUUID))
+		})
+
+		handler := middleware(nextHandler)
+
+		t.Run("Missing Authorization Header", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusUnauthorized {
+				t.Errorf("expected status 401, got %d", rr.Code)
+			}
+		})
+
+		t.Run("Invalid Token", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.Header.Set("Authorization", "Bearer invalid")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusUnauthorized {
+				t.Errorf("expected status 401, got %d", rr.Code)
+			}
+		})
+
+		t.Run("Expired Token", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.Header.Set("Authorization", "Bearer expired")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusUnauthorized {
+				t.Errorf("expected status 401, got %d", rr.Code)
+			}
+		})
+
+		t.Run("Valid Token", func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.Header.Set("Authorization", "Bearer valid")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("expected status 200, got %d", rr.Code)
+			}
+			body, _ := io.ReadAll(rr.Body)
+			if string(body) != "123e4567-e89b-12d3-a456-426614174000" {
+				t.Errorf("expected body '123e4567-e89b-12d3-a456-426614174000', got '%s'", string(body))
+			}
+		})
 	})
 
 	t.Run("NewHTTPServer Lifecycle", func(t *testing.T) {
