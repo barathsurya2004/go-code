@@ -21,11 +21,7 @@ func NewPgUserRepo(db *sql.DB) core.UserRepository {
 }
 
 func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
-func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO users (name)
-		VALUES ($1)
-		RETURNING uuid
 		INSERT INTO users (name)
 		VALUES ($1)
 		RETURNING uuid
@@ -40,14 +36,8 @@ func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) 
 		return uuid.Nil, err
 	}
 	return id, nil
-	var id uuid.UUID
-	if err := Tx.QueryRow(query, user.Name).Scan(&id); err != nil {
-		return uuid.Nil, err
-	}
-	return id, nil
 }
 
-func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 	query := `
 		SELECT uuid, name, created_at, updated_at
@@ -56,7 +46,6 @@ func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 	`
 
 	// validation checks
-	if id == uuid.Nil {
 	if id == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}
