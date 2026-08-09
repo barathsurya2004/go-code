@@ -22,17 +22,23 @@ func NewPgUserRepo(db *sql.DB) core.UserRepository {
 
 func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO users (name)
-		VALUES ($1)
+		INSERT INTO users (name,email,password_hash)
+		VALUES ($1,$2,$3)
 		RETURNING uuid
 	`
 
 	if strings.TrimSpace(user.Name) == "" {
 		return uuid.Nil, errors.New("user name is required")
 	}
+	if strings.TrimSpace(user.Email) == "" {
+		return uuid.Nil, errors.New("user email is required")
+	}
+	if strings.TrimSpace(user.PasswordHash) == "" {
+		return uuid.Nil, errors.New("user password hash is required")
+	}
 
 	var id uuid.UUID
-	if err := Tx.QueryRow(query, user.Name).Scan(&id); err != nil {
+	if err := Tx.QueryRow(query, user.Name, user.Email, user.PasswordHash).Scan(&id); err != nil {
 		return uuid.Nil, err
 	}
 	return id, nil
@@ -56,6 +62,27 @@ func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 		&user.Name,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (r *pgUserRepo) GetUserByEmail(email string) (*core.User, error) {
+	query := `
+		SELECT uuid, name, created_at, updated_at, password_hash, email
+		FROM users
+		WHERE email = $1
+	`
+	user := &core.User{}
+	err := r.db.QueryRow(query, email).Scan(
+		&user.UUID,
+		&user.Name,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.PasswordHash,
+		&user.Email,
 	)
 	if err != nil {
 		return nil, err

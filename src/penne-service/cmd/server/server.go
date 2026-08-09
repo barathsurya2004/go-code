@@ -24,6 +24,7 @@ type Application struct {
 	userHandler        *handlers.UserServiceHandler
 	budgetingHandler   *handlers.BudgetingServiceHandler
 	tokenRepo          core.TokenRepository
+	authHandler        *handlers.AuthServiceHandler
 }
 
 func NewApplication(
@@ -31,12 +32,14 @@ func NewApplication(
 	userHandler *handlers.UserServiceHandler,
 	budgetingHandler *handlers.BudgetingServiceHandler,
 	tokenRepo core.TokenRepository,
+	authHandler *handlers.AuthServiceHandler,
 ) *Application {
 	return &Application{
 		transactionHandler: transactionHandler,
 		userHandler:        userHandler,
 		budgetingHandler:   budgetingHandler,
 		tokenRepo:          tokenRepo,
+		authHandler:        authHandler,
 	}
 }
 
@@ -46,6 +49,11 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK(deployment check)"))
 	})
+
+	//auth enpoints
+
+	mux.HandleFunc("/auth/signup", app.authHandler.SignUp).Methods("POST")
+	mux.HandleFunc("/auth/login", app.authHandler.Login).Methods("POST")
 
 	// user endpoints
 	mux.HandleFunc("/user", app.userHandler.CreateUser).Methods("POST")
@@ -107,7 +115,7 @@ func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Serv
 func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) {
+			if r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/signup" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/login" && r.Method == http.MethodPost) {
 				next.ServeHTTP(w, r)
 				return
 			}

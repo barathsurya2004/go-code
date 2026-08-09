@@ -25,6 +25,9 @@ func (d *dummyUserRepo) CreateUser(u *core.User, Tx *sql.Tx) (uuid.UUID, error) 
 	return validTokenUUID, nil
 }
 func (d *dummyUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) { return nil, nil }
+func (d *dummyUserRepo) GetUserByEmail(email string) (*core.User, error) {
+	return nil, nil
+}
 
 type dummyTokenRepo struct{}
 
@@ -45,7 +48,7 @@ func (d *dummyTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) {
 	}
 	return &core.Token{UserUUID: validTokenUUID}, nil
 }
-func (d *dummyTokenRepo) GetTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+func (d *dummyTokenRepo) GetActiveTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
 	return nil, nil
 }
 func (d *dummyTokenRepo) UpdateToken(t *core.Token) error { return nil }
@@ -116,6 +119,7 @@ func TestServer(t *testing.T) {
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log, mockDB)
 	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log)
+	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 
 	t.Run("NewMux", func(t *testing.T) {
 		m := NewMux()
@@ -125,15 +129,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo {
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler {
 			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo)
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

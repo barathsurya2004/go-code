@@ -17,8 +17,9 @@ import (
 )
 
 type mockUserRepo struct {
-	createUserFn    func(user *core.User) (uuid.UUID, error)
-	getUserByUUIDFn func(id uuid.UUID) (*core.User, error)
+	createUserFn     func(user *core.User) (uuid.UUID, error)
+	getUserByUUIDFn  func(id uuid.UUID) (*core.User, error)
+	getUserByEmailFn func(email string) (*core.User, error)
 }
 
 func (m *mockUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
@@ -35,11 +36,19 @@ func (m *mockUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) {
 	return nil, nil
 }
 
+func (m *mockUserRepo) GetUserByEmail(email string) (*core.User, error) {
+	if m.getUserByEmailFn != nil {
+		return m.getUserByEmailFn(email)
+	}
+	return nil, nil
+}
+
 type mockTokenRepo struct {
-	createTokenFn func(token *core.Token) (uuid.UUID, error)
-	deleteTokenFn func(userUUID uuid.UUID) error
-	getTokenFn    func(token uuid.UUID) (*core.Token, error)
-	updateTokenFn func(token *core.Token) error
+	createTokenFn                func(token *core.Token) (uuid.UUID, error)
+	deleteTokenFn                func(userUUID uuid.UUID) error
+	getTokenFn                   func(token uuid.UUID) (*core.Token, error)
+	getActiveTokenWithUserUUIDFn func(userUUID uuid.UUID) (*core.Token, error)
+	updateTokenFn                func(token *core.Token) error
 }
 
 func (m *mockTokenRepo) CreateToken(token *core.Token, Tx *sql.Tx) (uuid.UUID, error) {
@@ -63,7 +72,10 @@ func (m *mockTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) {
 	return nil, nil
 }
 
-func (m *mockTokenRepo) GetTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+func (m *mockTokenRepo) GetActiveTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+	if m.getActiveTokenWithUserUUIDFn != nil {
+		return m.getActiveTokenWithUserUUIDFn(userUUID)
+	}
 	return nil, nil
 }
 
@@ -177,6 +189,38 @@ func TestUserServiceHandler(t *testing.T) {
 
 		if rr.Code != http.StatusNotFound {
 			t.Errorf("expected status %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("GetUserByUUID - Success", func(t *testing.T) {
+		userRepo.getUserByUUIDFn = func(id uuid.UUID) (*core.User, error) {
+			return &core.User{UUID: id, Name: "Alice"}, nil
+		}
+		req := httptest.NewRequest("GET", "/user", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUUID)
+		req = req.WithContext(ctx)
+		rr := httptest.NewRecorder()
+
+		handler.GetUserByUUID(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("GetUserByUUID - String Context UUID", func(t *testing.T) {
+		userRepo.getUserByUUIDFn = func(id uuid.UUID) (*core.User, error) {
+			return &core.User{UUID: id, Name: "Alice"}, nil
+		}
+		req := httptest.NewRequest("GET", "/user", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUUID.String())
+		req = req.WithContext(ctx)
+		rr := httptest.NewRecorder()
+
+		handler.GetUserByUUID(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
 

@@ -14,6 +14,7 @@ func TestModule(t *testing.T) {
 	var txnHandler *TransactionServiceHandler
 	var userHandler *UserServiceHandler
 	var budgetingHandler *BudgetingServiceHandler
+	var authHandler *AuthServiceHandler
 
 	app := fx.New(
 		Module,
@@ -30,14 +31,14 @@ func TestModule(t *testing.T) {
 			},
 			zap.NewNop,
 		),
-		fx.Populate(&txnHandler, &userHandler, &budgetingHandler),
+		fx.Populate(&txnHandler, &userHandler, &budgetingHandler, &authHandler),
 	)
 
 	if err := app.Err(); err != nil {
 		t.Fatalf("expected no error initializing handlers.Module, got %v", err)
 	}
 
-	if txnHandler == nil || userHandler == nil || budgetingHandler == nil {
+	if txnHandler == nil || userHandler == nil || budgetingHandler == nil || authHandler == nil {
 		t.Fatal("expected populated handlers, got nil")
 	}
 }

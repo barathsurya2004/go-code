@@ -32,15 +32,18 @@ type TransactionRepository interface {
 }
 
 type User struct {
-	UUID      uuid.UUID `json:"uuid"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UUID         uuid.UUID `json:"uuid"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type UserRepository interface {
 	CreateUser(user *User, Tx *sql.Tx) (uuid.UUID, error)
 	GetUserByUUID(uuid uuid.UUID) (*User, error)
+	GetUserByEmail(email string) (*User, error)
 }
 
 type Token struct {
@@ -59,7 +62,7 @@ type TokenRepository interface {
 	CreateToken(token *Token, Tx *sql.Tx) (uuid.UUID, error)
 	DeleteToken(userUUID uuid.UUID) error
 	GetToken(token uuid.UUID) (*Token, error)
-	GetTokenWithUserUUID(userUUID uuid.UUID) (*Token, error)
+	GetActiveTokenWithUserUUID(userUUID uuid.UUID) (*Token, error)
 	UpdateToken(token *Token) error
 }
 

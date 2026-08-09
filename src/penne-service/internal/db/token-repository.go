@@ -46,7 +46,7 @@ func (r *pgTokenRepo) CreateToken(token *core.Token, Tx *sql.Tx) (uuid.UUID, err
 		INSERT INTO user_tokens (user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()), COALESCE($9, NOW()))
 	`
-	_, err := r.db.Exec(
+	_, err := Tx.Exec(
 		query,
 		token.UserUUID,
 		token.Token,
@@ -76,7 +76,7 @@ func (r *pgTokenRepo) DeleteToken(userUUID uuid.UUID) error {
 	return err
 }
 
-func (r *pgTokenRepo) GetTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
+func (r *pgTokenRepo) GetActiveTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) {
 	if userUUID == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}

@@ -37,6 +37,8 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			Name:     "default",
 			Scope:    []string{"all"},
 		}
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
 		mock.ExpectExec("INSERT INTO user_tokens").
 			WithArgs(
 				token.UserUUID,
@@ -51,7 +53,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnError(errors.New("db error"))
 
-		_, err := repo.CreateToken(token, nil)
+		_, err := repo.CreateToken(token, tx)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -69,6 +71,8 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
 		mock.ExpectExec("INSERT INTO user_tokens").
 			WithArgs(
 				token.UserUUID,
@@ -83,7 +87,7 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		id, err := repo.CreateToken(token, nil)
+		id, err := repo.CreateToken(token, tx)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -122,7 +126,7 @@ func TestPgTokenRepo_DeleteToken(t *testing.T) {
 	})
 }
 
-func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
+func TestPgTokenRepo_GetActiveTokenWithUserUUID(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("unexpected error creating sqlmock: %v", err)
@@ -134,7 +138,7 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 	tokenUUID := uuid.MustParse("87654321-e89b-12d3-a456-426614174000")
 
 	t.Run("Empty UserUUID", func(t *testing.T) {
-		_, err := repo.GetTokenWithUserUUID(uuid.Nil)
+		_, err := repo.GetActiveTokenWithUserUUID(uuid.Nil)
 		if err == nil || err.Error() != "user UUID is required" {
 			t.Errorf("expected 'user UUID is required', got %v", err)
 		}
@@ -145,7 +149,7 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 			WithArgs(userUUID).
 			WillReturnError(sql.ErrNoRows)
 
-		_, err := repo.GetTokenWithUserUUID(userUUID)
+		_, err := repo.GetActiveTokenWithUserUUID(userUUID)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -161,7 +165,7 @@ func TestPgTokenRepo_GetTokenWithUserUUID(t *testing.T) {
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
-		token, err := repo.GetTokenWithUserUUID(userUUID)
+		token, err := repo.GetActiveTokenWithUserUUID(userUUID)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}

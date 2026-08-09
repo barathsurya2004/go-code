@@ -7,4 +7,5 @@ var Module = fx.Module(
 	fx.Provide(NewTransactionServiceHandler),
 	fx.Provide(NewUserServiceHandler),
 	fx.Provide(NewBudgetingServiceHandler),
+	fx.Provide(NewAuthServiceHandler),
 )
