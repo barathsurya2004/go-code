@@ -310,12 +310,29 @@ func TestServer(t *testing.T) {
 		})
 		handler := CORSMiddleware(nextHandler)
 
-		req := httptest.NewRequest(http.MethodOptions, "/test", nil)
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
+		// Test with Origin header and OPTIONS
+		req1 := httptest.NewRequest(http.MethodOptions, "/test", nil)
+		req1.Header.Set("Origin", "https://penne-dashboard.netlify.app")
+		rr1 := httptest.NewRecorder()
+		handler.ServeHTTP(rr1, req1)
 
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status 200 for OPTIONS preflight, got %d", rr.Code)
+		if rr1.Code != http.StatusOK {
+			t.Errorf("expected status 200 for OPTIONS preflight, got %d", rr1.Code)
+		}
+		if origin := rr1.Header().Get("Access-Control-Allow-Origin"); origin != "https://penne-dashboard.netlify.app" {
+			t.Errorf("expected Access-Control-Allow-Origin header 'https://penne-dashboard.netlify.app', got '%s'", origin)
+		}
+
+		// Test without Origin header and GET
+		req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
+		rr2 := httptest.NewRecorder()
+		handler.ServeHTTP(rr2, req2)
+
+		if rr2.Code != http.StatusOK {
+			t.Errorf("expected status 200 for GET request, got %d", rr2.Code)
+		}
+		if origin := rr2.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
+			t.Errorf("expected Access-Control-Allow-Origin header '*', got '%s'", origin)
 		}
 	})
 

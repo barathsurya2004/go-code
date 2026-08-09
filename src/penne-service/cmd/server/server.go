@@ -95,7 +95,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Server {
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: mux,
+		Handler: CORSMiddleware(mux),
 	}
 
 	lc.Append(fx.Hook{
@@ -116,7 +116,7 @@ func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Serv
 func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/signup" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/login" && r.Method == http.MethodPost) {
+			if r.Method == http.MethodOptions || r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/signup" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/login" && r.Method == http.MethodPost) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -155,7 +155,13 @@ func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, ngrok-skip-browser-warning, X-Requested-With, Accept, Origin")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
