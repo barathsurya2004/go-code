@@ -304,6 +304,21 @@ func TestServer(t *testing.T) {
 		})
 	})
 
+	t.Run("CORSMiddleware Preflight", func(t *testing.T) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		handler := CORSMiddleware(nextHandler)
+
+		req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status 200 for OPTIONS preflight, got %d", rr.Code)
+		}
+	})
+
 	t.Run("NewHTTPServer Lifecycle", func(t *testing.T) {
 		lc := fxtest.NewLifecycle(t)
 		router := NewMux()

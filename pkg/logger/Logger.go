@@ -5,7 +5,11 @@ import (
 )
 
 func NewLogger() (*zap.Logger, error) {
-	logger, err := zap.NewDevelopment()
+	return NewLoggerWithConfig(zap.NewDevelopmentConfig())
+}
+
+func NewLoggerWithConfig(cfg zap.Config) (*zap.Logger, error) {
+	logger, err := cfg.Build()
 	if err != nil {
 		return nil, err
 	}
