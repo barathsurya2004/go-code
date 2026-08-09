@@ -22,8 +22,8 @@ func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository {
 
 func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type,created_at)
+		VALUES ($1, $2, $3, $4, $5, $6,COALESCE($7,NOW())) RETURNING id
 	`
 
 	// validation checks
@@ -44,6 +44,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 		txn.CountryISO,
 		txn.BankName,
 		txn.Type,
+		txn.CreatedAt,
 	).Scan(&txnID); err != nil {
 		return uuid.Nil, err
 	}

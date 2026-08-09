@@ -56,7 +56,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
 			WillReturnError(errors.New("db error"))
 
 		_, err := repo.CreateTransaction(txn, tx)
@@ -77,7 +77,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, tx)
