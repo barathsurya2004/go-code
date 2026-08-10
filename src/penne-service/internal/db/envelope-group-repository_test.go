@@ -71,6 +71,26 @@ func TestEnvelopeGroupRepository_CreateEnvelopeGroup(t *testing.T) {
 			t.Errorf("expected ID %v, got %v", genID, id)
 		}
 	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		group := &core.EnvelopeGroup{
+			UserUUID: userUUID,
+			Name:     "Savings",
+			IsSystem: false,
+		}
+		genID := uuid.New()
+		mock.ExpectQuery("INSERT INTO envelope_group").
+			WithArgs(group.UserUUID, group.Name, group.IsSystem).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
+
+		id, err := repo.CreateEnvelopeGroup(group, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genID {
+			t.Errorf("expected ID %v, got %v", genID, id)
+		}
+	})
 }
 
 func TestEnvelopeGroupRepository_GetEnvelopeGroupByID(t *testing.T) {

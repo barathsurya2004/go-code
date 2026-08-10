@@ -88,6 +88,28 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 			t.Errorf("expected UUID %v, got %v", genUUID, id)
 		}
 	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		genUUID := uuid.New()
+		txn := &core.Transaction{
+			AmountE5:   100,
+			UserID:     userUUID,
+			CountryISO: "US",
+			BankName:   "Chase",
+			Type:       "debit",
+		}
+		mock.ExpectQuery("INSERT INTO transactionrows").
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
+
+		id, err := repo.CreateTransaction(txn, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genUUID {
+			t.Errorf("expected UUID %v, got %v", genUUID, id)
+		}
+	})
 }
 
 func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {

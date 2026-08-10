@@ -25,6 +25,7 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 		now := time.Now()
 		env := &core.Envelope{
 			UserUUID:        userUUID,
+			Name:            "Groceries",
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  10000,
 			Cadence:         "monthly",
@@ -38,6 +39,7 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 		mock.ExpectQuery("INSERT INTO envelope").
 			WithArgs(
 				env.UserUUID,
+				env.Name,
 				env.EnvelopeGroupID,
 				env.TargetAmountE5,
 				env.Cadence,
@@ -59,6 +61,7 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 		genID := uuid.New()
 		env := &core.Envelope{
 			UserUUID:        userUUID,
+			Name:            "Groceries",
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  10000,
 			Cadence:         "monthly",
@@ -72,6 +75,7 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 		mock.ExpectQuery("INSERT INTO envelope").
 			WithArgs(
 				env.UserUUID,
+				env.Name,
 				env.EnvelopeGroupID,
 				env.TargetAmountE5,
 				env.Cadence,
@@ -83,6 +87,43 @@ func TestPgEnvelopeRepo_CreateEnvelope(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
 
 		id, err := repo.CreateEnvelope(env, tx)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genID {
+			t.Errorf("expected ID %v, got %v", genID, id)
+		}
+	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		now := time.Now()
+		genID := uuid.New()
+		env := &core.Envelope{
+			UserUUID:        userUUID,
+			Name:            "Groceries",
+			EnvelopeGroupID: uuid.New(),
+			TargetAmountE5:  10000,
+			Cadence:         "monthly",
+			CountryISO:      "US",
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			IsSystem:        false,
+		}
+		mock.ExpectQuery("INSERT INTO envelope").
+			WithArgs(
+				env.UserUUID,
+				env.Name,
+				env.EnvelopeGroupID,
+				env.TargetAmountE5,
+				env.Cadence,
+				env.CountryISO,
+				env.CreatedAt,
+				env.UpdatedAt,
+				env.IsSystem,
+			).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
+
+		id, err := repo.CreateEnvelope(env, nil)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -104,7 +145,7 @@ func TestPgEnvelopeRepo_GetEnvelopeByID(t *testing.T) {
 	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(envID).
 			WillReturnError(sql.ErrNoRows)
 
@@ -118,12 +159,12 @@ func TestPgEnvelopeRepo_GetEnvelopeByID(t *testing.T) {
 		now := time.Now()
 		groupID := uuid.New()
 		rows := sqlmock.NewRows([]string{
-			"id", "user_uuid", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
+			"id", "user_uuid", "name", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
 		}).AddRow(
-			envID, userUUID, groupID, 50000.0, "monthly", "US", now, now, false,
+			envID, userUUID, "Groceries", groupID, 50000.0, "monthly", "US", now, now, false,
 		)
 
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(envID).
 			WillReturnRows(rows)
 
@@ -151,7 +192,7 @@ func TestPgEnvelopeRepo_GetEnvelopesByUserUUID(t *testing.T) {
 	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(userUUID).
 			WillReturnError(errors.New("query failed"))
 
@@ -163,7 +204,7 @@ func TestPgEnvelopeRepo_GetEnvelopesByUserUUID(t *testing.T) {
 
 	t.Run("Scan Error", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id"}).AddRow(123) // wrong types/columns
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -176,12 +217,12 @@ func TestPgEnvelopeRepo_GetEnvelopesByUserUUID(t *testing.T) {
 	t.Run("Row Iteration Error", func(t *testing.T) {
 		now := time.Now()
 		rows := sqlmock.NewRows([]string{
-			"id", "user_uuid", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
+			"id", "user_uuid", "name", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
 		}).
-			AddRow(uuid.New(), userUUID, uuid.New(), 1000.0, "monthly", "US", now, now, false).
+			AddRow(uuid.New(), userUUID, "Groceries", uuid.New(), 1000.0, "monthly", "US", now, now, false).
 			RowError(0, errors.New("row iteration error"))
 
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -197,12 +238,12 @@ func TestPgEnvelopeRepo_GetEnvelopesByUserUUID(t *testing.T) {
 		group1ID, group2ID := uuid.New(), uuid.New()
 
 		rows := sqlmock.NewRows([]string{
-			"id", "user_uuid", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
+			"id", "user_uuid", "name", "envelope_group_id", "target_amount_e5", "cadence", "country_iso", "created_at", "updated_at", "is_system",
 		}).
-			AddRow(env1ID, userUUID, group1ID, 1000.0, "monthly", "US", now, now, false).
-			AddRow(env2ID, userUUID, group2ID, 2000.0, "weekly", "US", now, now, true)
+			AddRow(env1ID, userUUID, "Groceries", group1ID, 1000.0, "monthly", "US", now, now, false).
+			AddRow(env2ID, userUUID, "Rent", group2ID, 2000.0, "weekly", "US", now, now, true)
 
-		mock.ExpectQuery("SELECT id, user_uuid, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
+		mock.ExpectQuery("SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -234,6 +275,7 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 		env := &core.Envelope{
 			ID:              uuid.New(),
 			UserUUID:        userUUID,
+			Name:            "Groceries",
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  15000,
 			Cadence:         "monthly",
@@ -251,6 +293,7 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 				env.CountryISO,
 				env.UpdatedAt,
 				env.IsSystem,
+				env.Name,
 				env.UserUUID,
 			).
 			WillReturnError(errors.New("update error"))
@@ -266,6 +309,7 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 		env := &core.Envelope{
 			ID:              uuid.New(),
 			UserUUID:        userUUID,
+			Name:            "Groceries",
 			EnvelopeGroupID: uuid.New(),
 			TargetAmountE5:  15000,
 			Cadence:         "monthly",
@@ -283,6 +327,7 @@ func TestPgEnvelopeRepo_UpdateEnvelope(t *testing.T) {
 				env.CountryISO,
 				env.UpdatedAt,
 				env.IsSystem,
+				env.Name,
 				env.UserUUID,
 			).
 			WillReturnResult(sqlmock.NewResult(1, 1))

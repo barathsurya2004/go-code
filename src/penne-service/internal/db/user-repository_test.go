@@ -78,7 +78,26 @@ func TestPgUserRepo_CreateUser(t *testing.T) {
 			t.Errorf("expected no error, got %v", err)
 		}
 		if id != genUUID {
-			t.Errorf("expected ID %v, got %v", genUUID, id)
+			t.Errorf("expected UUID %v, got %v", genUUID, id)
+		}
+	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		user := &core.User{
+			Name:         "Alice",
+			Email:        "alice@example.com",
+			PasswordHash: "hashed",
+		}
+		mock.ExpectQuery("INSERT INTO users").
+			WithArgs(user.Name, user.Email, user.PasswordHash).
+			WillReturnRows(sqlmock.NewRows([]string{"uuid"}).AddRow(genUUID))
+
+		id, err := repo.CreateUser(user, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if id != genUUID {
+			t.Errorf("expected UUID %v, got %v", genUUID, id)
 		}
 	})
 }

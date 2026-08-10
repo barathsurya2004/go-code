@@ -312,6 +312,104 @@ func TestPgAllocationRepo_GetActiveAllocationsByUserUUID(t *testing.T) {
 			t.Fatalf("expected 1 allocation, got %d", len(results))
 		}
 	})
+
+	t.Run("Auto Create Allocation Success", func(t *testing.T) {
+		envelopeID := uuid.New()
+		allocID := uuid.New()
+
+		envRows := sqlmock.NewRows([]string{"id", "envelope_group_id", "user_uuid", "name", "target_amount_e5", "cadence", "country_iso", "is_system"}).
+			AddRow(envelopeID, uuid.New(), userUUID, "Food", 100.0, "monthly", "US", false)
+
+		mock.ExpectQuery("SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system FROM envelope").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		rows := sqlmock.NewRows([]string{"id", "envelope_id", "allocated_amount_e5", "created_at", "updated_at", "start_date", "end_date"})
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		mock.ExpectQuery("INSERT INTO allocation").
+			WithArgs(envelopeID, 100.0, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(allocID))
+
+		results, err := repo.GetActiveAllocationsByUserUUID(userUUID, now, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 allocation created, got %d", len(results))
+		}
+	})
+
+	t.Run("Auto Create Allocation Cadence Error", func(t *testing.T) {
+		envelopeID := uuid.New()
+
+		envRows := sqlmock.NewRows([]string{"id", "envelope_group_id", "user_uuid", "name", "target_amount_e5", "cadence", "country_iso", "is_system"}).
+			AddRow(envelopeID, uuid.New(), userUUID, "Food", 100.0, "invalid_cadence", "US", false)
+
+		mock.ExpectQuery("SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system FROM envelope").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		rows := sqlmock.NewRows([]string{"id", "envelope_id", "allocated_amount_e5", "created_at", "updated_at", "start_date", "end_date"})
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now, nil)
+		if err == nil {
+			t.Error("expected error for invalid cadence, got nil")
+		}
+	})
+
+	t.Run("Auto Create Allocation DB Error", func(t *testing.T) {
+		envelopeID := uuid.New()
+
+		envRows := sqlmock.NewRows([]string{"id", "envelope_group_id", "user_uuid", "name", "target_amount_e5", "cadence", "country_iso", "is_system"}).
+			AddRow(envelopeID, uuid.New(), userUUID, "Food", 100.0, "monthly", "US", false)
+
+		mock.ExpectQuery("SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system FROM envelope").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		rows := sqlmock.NewRows([]string{"id", "envelope_id", "allocated_amount_e5", "created_at", "updated_at", "start_date", "end_date"})
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnRows(rows)
+
+		mock.ExpectQuery("INSERT INTO allocation").
+			WithArgs(envelopeID, 100.0, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("creation failed"))
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now, nil)
+		if err == nil {
+			t.Error("expected error for CreateAllocation failure, got nil")
+		}
+	})
+
+	t.Run("Allocations Query Error", func(t *testing.T) {
+		envelopeID := uuid.New()
+
+		envRows := sqlmock.NewRows([]string{"id", "envelope_group_id", "user_uuid", "name", "target_amount_e5", "cadence", "country_iso", "is_system"}).
+			AddRow(envelopeID, uuid.New(), userUUID, "Food", 100.0, "monthly", "US", false)
+
+		mock.ExpectQuery("SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system FROM envelope").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		mock.ExpectQuery("SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date").
+			WithArgs(userUUID, now).
+			WillReturnError(errors.New("allocations query error"))
+
+		_, err := repo.GetActiveAllocationsByUserUUID(userUUID, now, nil)
+		if err == nil {
+			t.Error("expected error for allocations query error, got nil")
+		}
+	})
 }
 
 func TestPgAllocationRepo_UpdateAllocation(t *testing.T) {

@@ -95,6 +95,41 @@ func TestPgTokenRepo_CreateToken(t *testing.T) {
 			t.Error("expected non-empty token UUID")
 		}
 	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		now := time.Now()
+		token := &core.Token{
+			UserUUID:  userUUID,
+			Token:     tokenUUID,
+			Prefix:    "mcp_",
+			Name:      "default",
+			Scope:     []string{"all"},
+			ExpiresAt: &now,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		mock.ExpectExec("INSERT INTO user_tokens").
+			WithArgs(
+				token.UserUUID,
+				token.Token,
+				token.Prefix,
+				token.Name,
+				pq.Array(token.Scope),
+				*token.ExpiresAt,
+				nil,
+				token.CreatedAt,
+				token.UpdatedAt,
+			).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		id, err := repo.CreateToken(token, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if id == uuid.Nil {
+			t.Error("expected non-empty token UUID")
+		}
+	})
 }
 
 func TestPgTokenRepo_DeleteToken(t *testing.T) {
