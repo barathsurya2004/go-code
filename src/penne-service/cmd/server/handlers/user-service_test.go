@@ -140,7 +140,7 @@ func (d *dummyAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation,
 func (d *dummyAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*core.Allocation, error) {
 	return nil, nil
 }
-func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 	return nil, nil
 }
 func (d *dummyAllocationRepo) UpdateAllocation(allocation *core.Allocation) error { return nil }

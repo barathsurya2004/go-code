@@ -135,8 +135,8 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 		// create envelope group
 		envelopeGroup := core.EnvelopeGroup{
 			UserUUID:  userUUID,
-			Name:      "Default",
-			IsSystem:  false,
+			Name:      core.DefaultName,
+			IsSystem:  true,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -152,6 +152,7 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 			UserUUID:        user.UUID,
 			EnvelopeGroupID: envGroupID,
 			TargetAmountE5:  0,
+			Name:            core.DefaultName,
 			Cadence:         "forever",
 			CountryISO:      "IN",
 			CreatedAt:       time.Now(),

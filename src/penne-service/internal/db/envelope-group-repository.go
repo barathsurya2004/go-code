@@ -27,7 +27,13 @@ func (r *EnvelopeGroupRepository) CreateEnvelopeGroup(envelopeGroup *core.Envelo
 		return uuid.Nil, errors.New("envelope group name is required")
 	}
 
-	if err := Tx.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem).Scan(&envelopeGroup.ID); err != nil {
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem)
+	} else {
+		row = r.db.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem)
+	}
+	if err := row.Scan(&envelopeGroup.ID); err != nil {
 		return uuid.Nil, err
 	}
 

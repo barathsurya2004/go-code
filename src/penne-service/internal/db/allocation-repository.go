@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -23,7 +24,13 @@ func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql
 		INSERT INTO allocation (envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date)
 		VALUES ($1, $2, COALESCE($3, NOW()), COALESCE($4, NOW()), $5, $6) RETURNING id
 	`
-	if err := Tx.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate).Scan(&allocation.ID); err != nil {
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+	} else {
+		row = r.db.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+	}
+	if err := row.Scan(&allocation.ID); err != nil {
 		return uuid.Nil, err
 	}
 	return allocation.ID, nil
@@ -66,7 +73,36 @@ func (r *pgAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*
 	return allocations, nil
 }
 
-func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
+	queryForEnv := `
+		SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system
+		FROM envelope WHERE user_uuid = $1
+	`
+
+	var rowsForEnv *sql.Rows
+	var err error
+	if Tx != nil {
+		rowsForEnv, err = Tx.Query(queryForEnv, userUUID)
+	} else {
+		rowsForEnv, err = r.db.Query(queryForEnv, userUUID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rowsForEnv.Close()
+	envelopeMap := make(map[uuid.UUID]core.Envelope)
+	for rowsForEnv.Next() {
+		envelope := &core.Envelope{}
+		err := rowsForEnv.Scan(&envelope.ID, &envelope.EnvelopeGroupID, &envelope.UserUUID, &envelope.Name, &envelope.TargetAmountE5, &envelope.Cadence, &envelope.CountryISO, &envelope.IsSystem)
+		if err != nil {
+			return nil, err
+		}
+		envelopeMap[envelope.ID] = *envelope
+	}
+	if err := rowsForEnv.Err(); err != nil {
+		return nil, err
+	}
+
 	query := `
 		SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date
 		FROM allocation a
@@ -74,7 +110,12 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 		WHERE e.user_uuid = $1
 		  AND $2::date BETWEEN a.start_date AND a.end_date
 	`
-	rows, err := r.db.Query(query, userUUID, targetDate)
+	var rows *sql.Rows
+	if Tx != nil {
+		rows, err = Tx.Query(query, userUUID, targetDate)
+	} else {
+		rows, err = r.db.Query(query, userUUID, targetDate)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +128,33 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 			return nil, err
 		}
 		allocations = append(allocations, allocation)
+		if _, ok := envelopeMap[allocation.EnvelopeID]; ok {
+			delete(envelopeMap, allocation.EnvelopeID)
+		}
 	}
+
+	for _, envelope := range envelopeMap {
+		startDate, endDate, err := utils.GetCadenceStartAndEndTime(envelope.Cadence, targetDate)
+		if err != nil {
+			return nil, err
+		}
+
+		allocation := &core.Allocation{
+			EnvelopeID:        envelope.ID,
+			AllocatedAmountE5: envelope.TargetAmountE5,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+			StartDate:         &startDate,
+			EndDate:           &endDate,
+		}
+
+		allocation.ID, err = r.CreateAllocation(allocation, Tx)
+		if err != nil {
+			return nil, err
+		}
+		allocations = append(allocations, allocation)
+	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}

@@ -1,0 +1,1 @@
+ALTER TABLE envelope DROP COLUMN IF EXISTS name;

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -106,7 +107,7 @@ type mockAllocationRepo struct {
 	createFn          func(alloc *core.Allocation) (uuid.UUID, error)
 	getByIDFn         func(id uuid.UUID) (*core.Allocation, error)
 	getByEnvelopeFn   func(envelopeID uuid.UUID) ([]*core.Allocation, error)
-	getActiveByUserFn func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error)
+	getActiveByUserFn func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error)
 	updateFn          func(alloc *core.Allocation) error
 	deleteFn          func(id uuid.UUID) error
 }
@@ -132,9 +133,9 @@ func (m *mockAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([
 	return nil, nil
 }
 
-func (m *mockAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+func (m *mockAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 	if m.getActiveByUserFn != nil {
-		return m.getActiveByUserFn(userUUID, targetDate)
+		return m.getActiveByUserFn(userUUID, targetDate, Tx)
 	}
 	return nil, nil
 }
@@ -158,8 +159,10 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	mockDB, _, _ := sqlmock.New()
+	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
 	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelopeGroup - Success", func(t *testing.T) {
@@ -406,8 +409,10 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	mockDB, _, _ := sqlmock.New()
+	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
 	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelope - Success", func(t *testing.T) {
@@ -656,8 +661,10 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	mockDB, _, _ := sqlmock.New()
+	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
 
 	t.Run("CreateAllocation - Success", func(t *testing.T) {
 		allocRepo.createFn = func(alloc *core.Allocation) (uuid.UUID, error) {
@@ -861,7 +868,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 
 	t.Run("GetActiveAllocationsByUserUUID - Success", func(t *testing.T) {
 		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
-		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 			return []*core.Allocation{{AllocatedAmountE5: 100000}}, nil
 		}
 
@@ -887,7 +894,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 
 	t.Run("GetActiveAllocationsByUserUUID - Query Param Fallback", func(t *testing.T) {
 		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
-		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 			return []*core.Allocation{{AllocatedAmountE5: 100000}}, nil
 		}
 
@@ -902,7 +909,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 
 	t.Run("GetActiveAllocationsByUserUUID - Repo Error", func(t *testing.T) {
 		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
-		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 			return nil, errors.New("db error")
 		}
 
@@ -913,6 +920,106 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		handler.GetActiveAllocationsByUserUUID(rr, req.WithContext(ctx))
 		if rr.Code != http.StatusInternalServerError {
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("GetActiveCategoriesByUserUUID - Missing User UUID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
+		rr := httptest.NewRecorder()
+
+		handler.GetActiveCategoriesByUserUUID(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("GetActiveCategoriesByUserUUID - BeginTx Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		dbClosed, _, _ := sqlmock.New()
+		dbClosed.Close() // closed DB will fail BeginTx
+		hClosed := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbClosed)
+
+		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		hClosed.GetActiveCategoriesByUserUUID(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("GetActiveCategoriesByUserUUID - GetActiveAllocations Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
+			return nil, errors.New("alloc error")
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.GetActiveCategoriesByUserUUID(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("GetActiveCategoriesByUserUUID - GetEnvelopeByID Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
+			return []*core.Allocation{{EnvelopeID: envID, AllocatedAmountE5: 5000}}, nil
+		}
+		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {
+			return nil, errors.New("env error")
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.GetActiveCategoriesByUserUUID(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("GetActiveCategoriesByUserUUID - Success", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
+			return []*core.Allocation{{EnvelopeID: envID, AllocatedAmountE5: 5000}}, nil
+		}
+		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {
+			return &core.Envelope{ID: envID, Name: "Groceries", CountryISO: "US", Cadence: core.MonthlyCadence}, nil
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.GetActiveCategoriesByUserUUID(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
 }

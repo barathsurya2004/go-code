@@ -87,8 +87,9 @@ type Envelope struct {
 	ID              uuid.UUID `json:"id"`
 	UserUUID        uuid.UUID `json:"user_uuid"`
 	EnvelopeGroupID uuid.UUID `json:"envelope_group_id"`
+	Name            string    `json:"name"`
 	TargetAmountE5  float64   `json:"target_amount_e5"`
-	Cadence         string    `json:"cadence"`
+	Cadence         Cadence   `json:"cadence"`
 	CountryISO      string    `json:"country_iso2"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
@@ -117,7 +118,7 @@ type AllocationRepository interface {
 	CreateAllocation(allocation *Allocation, Tx *sql.Tx) (uuid.UUID, error)
 	GetAllocationByID(id uuid.UUID) (*Allocation, error)
 	GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*Allocation, error)
-	GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*Allocation, error)
+	GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*Allocation, error)
 	UpdateAllocation(allocation *Allocation) error
 	DeleteAllocation(id uuid.UUID) error
 }

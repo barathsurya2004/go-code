@@ -46,18 +46,34 @@ func (r *pgTokenRepo) CreateToken(token *core.Token, Tx *sql.Tx) (uuid.UUID, err
 		INSERT INTO user_tokens (user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()), COALESCE($9, NOW()))
 	`
-	_, err := Tx.Exec(
-		query,
-		token.UserUUID,
-		token.Token,
-		token.Prefix,
-		token.Name,
-		pq.Array(token.Scope),
-		nullTimePtr(token.ExpiresAt),
-		nullTimePtr(token.LastUsedAt),
-		nullTime(token.CreatedAt),
-		nullTime(token.UpdatedAt),
-	)
+	var err error
+	if Tx != nil {
+		_, err = Tx.Exec(
+			query,
+			token.UserUUID,
+			token.Token,
+			token.Prefix,
+			token.Name,
+			pq.Array(token.Scope),
+			nullTimePtr(token.ExpiresAt),
+			nullTimePtr(token.LastUsedAt),
+			nullTime(token.CreatedAt),
+			nullTime(token.UpdatedAt),
+		)
+	} else {
+		_, err = r.db.Exec(
+			query,
+			token.UserUUID,
+			token.Token,
+			token.Prefix,
+			token.Name,
+			pq.Array(token.Scope),
+			nullTimePtr(token.ExpiresAt),
+			nullTimePtr(token.LastUsedAt),
+			nullTime(token.CreatedAt),
+			nullTime(token.UpdatedAt),
+		)
+	}
 	if err != nil {
 		return uuid.Nil, err
 	}

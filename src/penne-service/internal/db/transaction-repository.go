@@ -37,15 +37,29 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 		return uuid.Nil, errors.New("transaction type cannot be empty")
 	}
 	var txnID uuid.UUID
-	if err := Tx.QueryRow(query,
-		txn.UserID,
-		txn.EnvelopeID,
-		txn.AmountE5,
-		txn.CountryISO,
-		txn.BankName,
-		txn.Type,
-		txn.CreatedAt,
-	).Scan(&txnID); err != nil {
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRow(query,
+			txn.UserID,
+			txn.EnvelopeID,
+			txn.AmountE5,
+			txn.CountryISO,
+			txn.BankName,
+			txn.Type,
+			txn.CreatedAt,
+		)
+	} else {
+		row = r.db.QueryRow(query,
+			txn.UserID,
+			txn.EnvelopeID,
+			txn.AmountE5,
+			txn.CountryISO,
+			txn.BankName,
+			txn.Type,
+			txn.CreatedAt,
+		)
+	}
+	if err := row.Scan(&txnID); err != nil {
 		return uuid.Nil, err
 	}
 	txn.ID = txnID

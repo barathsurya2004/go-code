@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -15,6 +16,7 @@ type BudgetingServiceHandler struct {
 	envelopeRepo      core.EnvelopeRepository
 	allocationRepo    core.AllocationRepository
 	logger            *zap.Logger
+	db                *sql.DB
 }
 
 func NewBudgetingServiceHandler(
@@ -22,12 +24,14 @@ func NewBudgetingServiceHandler(
 	envelopeRepo core.EnvelopeRepository,
 	allocationRepo core.AllocationRepository,
 	logger *zap.Logger,
+	db *sql.DB,
 ) *BudgetingServiceHandler {
 	return &BudgetingServiceHandler{
 		envelopeGroupRepo: envelopeGroupRepo,
 		envelopeRepo:      envelopeRepo,
 		allocationRepo:    allocationRepo,
 		logger:            logger,
+		db:                db,
 	}
 }
 
@@ -399,7 +403,7 @@ func (h *BudgetingServiceHandler) GetActiveAllocationsByUserUUID(w http.Response
 		}
 	}
 
-	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, targetDate)
+	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, targetDate, nil)
 	if err != nil {
 		http.Error(w, "Failed to get active allocations", http.StatusInternalServerError)
 		h.logger.Error("Failed to get active allocations", zap.String("user_uuid", userUUID.String()), zap.Error(err))
@@ -409,4 +413,59 @@ func (h *BudgetingServiceHandler) GetActiveAllocationsByUserUUID(w http.Response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(allocations)
+}
+
+func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseWriter, r *http.Request) {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		http.Error(w, "Missing user UUID", http.StatusBadRequest)
+		h.logger.Error("Missing user UUID")
+		return
+	}
+	tx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		h.logger.Error("Failed to begin transaction", zap.Error(err))
+		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, time.Now(), tx)
+	if err != nil {
+		h.logger.Error("Failed to get active allocations", zap.String("user_uuid", userUUID.String()), zap.Error(err))
+		http.Error(w, "Failed to get active allocations", http.StatusInternalServerError)
+		return
+	}
+
+	type budgetCategory struct {
+		Name            string       `json:"name"`
+		AllocatedAmount float64      `json:"allocated_amount_e5"`
+		IsSystem        bool         `json:"is_system"`
+		Currency        string       `json:"currency"`
+		Cadence         core.Cadence `json:"cadence"`
+		EnvelopeID      uuid.UUID    `json:"envelope_id"`
+	}
+
+	budgetCategories := make([]budgetCategory, 0)
+	for _, allocation := range allocations {
+		env, err := h.envelopeRepo.GetEnvelopeByID(allocation.EnvelopeID)
+		if err != nil {
+			h.logger.Error("Failed to get envelope", zap.String("envelope_id", allocation.EnvelopeID.String()), zap.Error(err))
+			http.Error(w, "Failed to get envelope", http.StatusInternalServerError)
+			return
+		}
+
+		budgetCategories = append(budgetCategories, budgetCategory{
+			Name:            env.Name,
+			AllocatedAmount: allocation.AllocatedAmountE5,
+			IsSystem:        env.IsSystem,
+			Currency:        env.CountryISO,
+			Cadence:         env.Cadence,
+			EnvelopeID:      env.ID,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(budgetCategories)
 }

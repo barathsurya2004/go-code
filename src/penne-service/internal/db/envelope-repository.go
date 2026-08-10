@@ -31,17 +31,33 @@ func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope, Tx *sql.Tx) (uu
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
 	`
-	if err := Tx.QueryRow(
-		query,
-		envelope.UserUUID,
-		envelope.EnvelopeGroupID,
-		envelope.TargetAmountE5,
-		envelope.Cadence,
-		envelope.CountryISO,
-		envelope.CreatedAt,
-		envelope.UpdatedAt,
-		envelope.IsSystem,
-	).Scan(&envelope.ID); err != nil {
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRow(
+			query,
+			envelope.UserUUID,
+			envelope.EnvelopeGroupID,
+			envelope.TargetAmountE5,
+			envelope.Cadence,
+			envelope.CountryISO,
+			envelope.CreatedAt,
+			envelope.UpdatedAt,
+			envelope.IsSystem,
+		)
+	} else {
+		row = r.db.QueryRow(
+			query,
+			envelope.UserUUID,
+			envelope.EnvelopeGroupID,
+			envelope.TargetAmountE5,
+			envelope.Cadence,
+			envelope.CountryISO,
+			envelope.CreatedAt,
+			envelope.UpdatedAt,
+			envelope.IsSystem,
+		)
+	}
+	if err := row.Scan(&envelope.ID); err != nil {
 		return uuid.Nil, err
 	}
 	return envelope.ID, nil

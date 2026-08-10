@@ -38,7 +38,13 @@ func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) 
 	}
 
 	var id uuid.UUID
-	if err := Tx.QueryRow(query, user.Name, user.Email, user.PasswordHash).Scan(&id); err != nil {
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRow(query, user.Name, user.Email, user.PasswordHash)
+	} else {
+		row = r.db.QueryRow(query, user.Name, user.Email, user.PasswordHash)
+	}
+	if err := row.Scan(&id); err != nil {
 		return uuid.Nil, err
 	}
 	return id, nil

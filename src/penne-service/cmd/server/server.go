@@ -88,6 +88,8 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/allocation", app.budgetingHandler.UpdateAllocation).Methods("PUT")
 	mux.HandleFunc("/allocation", app.budgetingHandler.DeleteAllocation).Methods("DELETE")
 
+	// apis
+	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
 	mux.Use(CORSMiddleware)
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }

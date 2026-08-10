@@ -104,7 +104,7 @@ func (d *dummyAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation,
 func (d *dummyAllocationRepo) GetAllocationsByEnvelopeID(id uuid.UUID) ([]*core.Allocation, error) {
 	return nil, nil
 }
-func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time) ([]*core.Allocation, error) {
+func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 	return nil, nil
 }
 func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
@@ -118,7 +118,7 @@ func TestServer(t *testing.T) {
 
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log, mockDB)
-	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log)
+	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 
 	t.Run("NewMux", func(t *testing.T) {
