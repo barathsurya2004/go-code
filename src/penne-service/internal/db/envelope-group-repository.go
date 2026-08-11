@@ -42,7 +42,7 @@ func (r *EnvelopeGroupRepository) CreateEnvelopeGroup(envelopeGroup *core.Envelo
 
 func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) {
 	query := `
-		SELECT id, user_uuid, name, is_system
+		SELECT id, user_uuid, name, is_system, created_at, updated_at
 		FROM envelope_group
 		WHERE id = $1
 	`
@@ -68,7 +68,7 @@ func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.Enve
 
 func (r *EnvelopeGroupRepository) GetEnvelopeGroupsByUserUUID(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 	query := `
-		SELECT id, user_uuid, name, is_system
+		SELECT id, user_uuid, name, is_system,created_at, updated_at
 		FROM envelope_group
 		WHERE user_uuid = $1
 	`

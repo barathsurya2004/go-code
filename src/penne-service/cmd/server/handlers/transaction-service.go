@@ -110,19 +110,31 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 
 func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	var txn core.Transaction
-	userUUID, ok := getUserUUIDFromContextOrQuery(r)
-	if !ok {
-		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
-		h.logger.Error("No user UUID found in request context")
-		return
-	}
 	if err := json.NewDecoder(r.Body).Decode(&txn); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Failed to decode transaction payload", zap.Error(err))
 		return
 	}
-	txn.UserID = userUUID
-	if err := h.transactionRepo.UpdateTransaction(&txn); err != nil {
+	//get the existing transaction
+	txnToUpdate, err := h.transactionRepo.GetTransactionByUUID(txn.ID)
+	if err != nil {
+		http.Error(w, "Transaction not found", http.StatusNotFound)
+		h.logger.Error("Transaction not found", zap.String("uuid", txn.ID.String()), zap.Error(err))
+		return
+	}
+
+	newTxn := txnToUpdate
+	if txn.AmountE5 != 0 {
+		newTxn.AmountE5 = txn.AmountE5
+	}
+	if txn.Type != "" {
+		newTxn.Type = txn.Type
+	}
+	if txn.EnvelopeID != nil {
+		newTxn.EnvelopeID = txn.EnvelopeID
+	}
+
+	if err := h.transactionRepo.UpdateTransaction(newTxn); err != nil {
 		http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to update transaction", zap.Error(err))
 		return

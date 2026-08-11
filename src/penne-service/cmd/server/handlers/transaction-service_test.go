@@ -247,14 +247,14 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("UpdateTransaction - Missing Context User UUID", func(t *testing.T) {
+	t.Run("UpdateTransaction - Without Context User UUID", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID.String()+`"}`))
 		rr := httptest.NewRecorder()
 
 		handler.UpdateTransaction(rr, req)
 
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
 
