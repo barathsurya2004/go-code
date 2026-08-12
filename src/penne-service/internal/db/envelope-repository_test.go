@@ -371,3 +371,57 @@ func TestPgEnvelopeRepo_DeleteEnvelope(t *testing.T) {
 		}
 	})
 }
+
+func TestPgEnvelopeRepo_GetEnvelopeIdByName(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgEnvelopeRepo(db)
+	userUUID := uuid.New()
+	envID := uuid.New()
+	envName := "Groceries"
+
+	t.Run("Query Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+			WithArgs(envName, userUUID).
+			WillReturnError(sql.ErrNoRows)
+
+		_, err := repo.GetEnvelopeIdByName(envName, userUUID, nil)
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+			WithArgs(envName, userUUID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(envID))
+
+		id, err := repo.GetEnvelopeIdByName(envName, userUUID, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if id != envID {
+			t.Errorf("expected %v, got %v", envID, id)
+		}
+	})
+
+	t.Run("Success With Tx", func(t *testing.T) {
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+			WithArgs(envName, userUUID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(envID))
+
+		id, err := repo.GetEnvelopeIdByName(envName, userUUID, tx)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if id != envID {
+			t.Errorf("expected %v, got %v", envID, id)
+		}
+	})
+}

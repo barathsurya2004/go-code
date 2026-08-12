@@ -91,7 +91,10 @@ func (d *dummyEnvelopeRepo) GetEnvelopesByUserUUID(id uuid.UUID) ([]*core.Envelo
 	return nil, nil
 }
 func (d *dummyEnvelopeRepo) UpdateEnvelope(e *core.Envelope) error { return nil }
-func (d *dummyEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error          { return nil }
+func (d *dummyEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error     { return nil }
+func (d *dummyEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
 
 type dummyAllocationRepo struct{}
 
@@ -108,7 +111,7 @@ func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID,
 	return nil, nil
 }
 func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
-func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error          { return nil }
+func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error       { return nil }
 
 func TestServer(t *testing.T) {
 	log := zap.NewNop()

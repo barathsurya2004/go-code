@@ -123,6 +123,9 @@ func (d *dummyEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.
 }
 func (d *dummyEnvelopeRepo) UpdateEnvelope(envelope *core.Envelope) error { return nil }
 func (d *dummyEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error            { return nil }
+func (d *dummyEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
 
 type dummyAllocationRepo struct {
 	createFn func(allocation *core.Allocation) (uuid.UUID, error)

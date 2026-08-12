@@ -20,6 +20,38 @@ func NewPgAllocationRepo(db *sql.DB) core.AllocationRepository {
 }
 
 func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
+	checkQuery := `
+		SELECT id, envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date
+		FROM allocation
+		WHERE envelope_id = $1
+		  AND ($2::date IS NULL OR $3::date IS NULL OR (start_date <= $3 AND end_date >= $2))
+		LIMIT 1
+	`
+	var checkRow *sql.Row
+	if Tx != nil {
+		checkRow = Tx.QueryRow(checkQuery, allocation.EnvelopeID, allocation.StartDate, allocation.EndDate)
+	} else {
+		checkRow = r.db.QueryRow(checkQuery, allocation.EnvelopeID, allocation.StartDate, allocation.EndDate)
+	}
+
+	var existingAllocation core.Allocation
+	err := checkRow.Scan(
+		&existingAllocation.ID,
+		&existingAllocation.EnvelopeID,
+		&existingAllocation.AllocatedAmountE5,
+		&existingAllocation.CreatedAt,
+		&existingAllocation.UpdatedAt,
+		&existingAllocation.StartDate,
+		&existingAllocation.EndDate,
+	)
+
+	if err == nil {
+		*allocation = existingAllocation
+		return allocation.ID, nil
+	} else if err != sql.ErrNoRows {
+		return uuid.Nil, err
+	}
+
 	query := `
 		INSERT INTO allocation (envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date)
 		VALUES ($1, $2, COALESCE($3, NOW()), COALESCE($4, NOW()), $5, $6) RETURNING id

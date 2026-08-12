@@ -190,6 +190,21 @@ func (h *BudgetingServiceHandler) CreateEnvelope(w http.ResponseWriter, r *http.
 
 	env.UserUUID = userUUID
 
+	envID, _ := h.envelopeRepo.GetEnvelopeIdByName(env.Name, userUUID, nil)
+	if envID != uuid.Nil {
+		env, err := h.envelopeRepo.GetEnvelopeByID(envID)
+		if err != nil {
+			http.Error(w, "Failed to get envelope", http.StatusInternalServerError)
+			h.logger.Error("Failed to get envelope", zap.Error(err))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(env)
+		return
+	}
+
 	if _, err := h.envelopeRepo.CreateEnvelope(&env, nil); err != nil {
 		http.Error(w, "Failed to create envelope", http.StatusInternalServerError)
 		h.logger.Error("Failed to create envelope", zap.Error(err))

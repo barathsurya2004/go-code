@@ -131,6 +131,21 @@ func (r *pgEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.Env
 	return envelopes, nil
 }
 
+func (r *pgEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+	query := `SELECT id FROM envelope WHERE name = $1 AND user_uuid = $2`
+	var row *sql.Row
+	if tx != nil {
+		row = tx.QueryRow(query, envlopeName, userUUID)
+	} else {
+		row = r.db.QueryRow(query, envlopeName, userUUID)
+	}
+	var id uuid.UUID
+	if err := row.Scan(&id); err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
 func (r *pgEnvelopeRepo) UpdateEnvelope(envelope *core.Envelope) error {
 	query := `
 		UPDATE envelope

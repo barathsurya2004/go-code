@@ -66,6 +66,7 @@ type mockEnvelopeRepo struct {
 	getByUserFn func(userUUID uuid.UUID) ([]*core.Envelope, error)
 	updateFn    func(env *core.Envelope) error
 	deleteFn    func(id uuid.UUID) error
+	getByNameFn func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error)
 }
 
 func (m *mockEnvelopeRepo) CreateEnvelope(env *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
@@ -101,6 +102,13 @@ func (m *mockEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error {
 		return m.deleteFn(id)
 	}
 	return nil
+}
+
+func (m *mockEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+	if m.getByNameFn != nil {
+		return m.getByNameFn(envlopeName, userUUID, tx)
+	}
+	return uuid.Nil, nil
 }
 
 type mockAllocationRepo struct {

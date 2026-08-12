@@ -102,6 +102,7 @@ type EnvelopeRepository interface {
 	GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*Envelope, error)
 	UpdateEnvelope(envelope *Envelope) error
 	DeleteEnvelope(id uuid.UUID) error
+	GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error)
 }
 
 type Allocation struct {
