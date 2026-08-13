@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -22,8 +23,8 @@ func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository {
 
 func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type,created_at)
-		VALUES ($1, $2, $3, $4, $5, $6,COALESCE($7,NOW())) RETURNING id
+		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type,created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)RETURNING id
 	`
 
 	// validation checks
@@ -36,6 +37,9 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 	if txn.Type == "" {
 		return uuid.Nil, errors.New("transaction type cannot be empty")
 	}
+	if txn.CreatedAt.IsZero() {
+		txn.CreatedAt = time.Now()
+	}
 	var txnID uuid.UUID
 	var row *sql.Row
 	if Tx != nil {
@@ -44,7 +48,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.EnvelopeID,
 			txn.AmountE5,
 			txn.CountryISO,
-			txn.BankName,
+			txn.PaymentMethod,
 			txn.Type,
 			txn.CreatedAt,
 		)
@@ -54,7 +58,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.EnvelopeID,
 			txn.AmountE5,
 			txn.CountryISO,
-			txn.BankName,
+			txn.PaymentMethod,
 			txn.Type,
 			txn.CreatedAt,
 		)
@@ -68,7 +72,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 
 func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type, created_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
 		FROM transactionrows
 		WHERE id = $1
 	`
@@ -84,7 +88,7 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 		&txn.EnvelopeID,
 		&txn.AmountE5,
 		&txn.CountryISO,
-		&txn.BankName,
+		&txn.PaymentMethod,
 		&txn.Type,
 		&txn.CreatedAt,
 	)
@@ -96,7 +100,7 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 
 func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*core.Transaction, error) {
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, bank_name, txn_type, created_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
 		FROM transactionrows
 		WHERE user_id = $1
 	`
@@ -120,7 +124,7 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*
 			&txn.EnvelopeID,
 			&txn.AmountE5,
 			&txn.CountryISO,
-			&txn.BankName,
+			&txn.PaymentMethod,
 			&txn.Type,
 			&txn.CreatedAt,
 		); err != nil {
@@ -139,7 +143,7 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*
 func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction) error {
 	query := `
 		UPDATE transactionrows
-		SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, bank_name = $4, txn_type = $5
+		SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, payment_method = $4, txn_type = $5
 		WHERE id = $6
 	`
 
@@ -161,7 +165,7 @@ func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction) error {
 		txn.EnvelopeID,
 		txn.AmountE5,
 		txn.CountryISO,
-		txn.BankName,
+		txn.PaymentMethod,
 		txn.Type,
 		txn.ID,
 	)

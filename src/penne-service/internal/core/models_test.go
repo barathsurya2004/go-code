@@ -23,7 +23,7 @@ func TestModelsJSON(t *testing.T) {
 			EnvelopeID: &envID,
 			AmountE5:   500,
 			CountryISO: "US",
-			BankName:   "Chase",
+			PaymentMethod: "Chase",
 			Type:       "debit",
 			CreatedAt:  now,
 		}

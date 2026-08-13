@@ -47,16 +47,16 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 
 	t.Run("Exec Error", func(t *testing.T) {
 		txn := &core.Transaction{
-			AmountE5:   100,
-			UserID:     userUUID,
-			CountryISO: "US",
-			BankName:   "Chase",
-			Type:       "debit",
+			AmountE5:      100,
+			UserID:        userUUID,
+			CountryISO:    "US",
+			PaymentMethod: "Chase",
+			Type:          "debit",
 		}
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
 			WillReturnError(errors.New("db error"))
 
 		_, err := repo.CreateTransaction(txn, tx)
@@ -68,16 +68,16 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		genUUID := uuid.New()
 		txn := &core.Transaction{
-			AmountE5:   100,
-			UserID:     userUUID,
-			CountryISO: "US",
-			BankName:   "Chase",
-			Type:       "debit",
+			AmountE5:      100,
+			UserID:        userUUID,
+			CountryISO:    "US",
+			PaymentMethod: "Chase",
+			Type:          "debit",
 		}
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, tx)
@@ -92,14 +92,14 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 	t.Run("Success Without Tx", func(t *testing.T) {
 		genUUID := uuid.New()
 		txn := &core.Transaction{
-			AmountE5:   100,
-			UserID:     userUUID,
-			CountryISO: "US",
-			BankName:   "Chase",
-			Type:       "debit",
+			AmountE5:      100,
+			UserID:        userUUID,
+			CountryISO:    "US",
+			PaymentMethod: "Chase",
+			Type:          "debit",
 		}
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.CreatedAt).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, nil)
@@ -143,7 +143,7 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
 			AddRow(validUUID, userUUID, nil, int64(500), "US", "Chase", "debit", now)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE id = \\$1").
@@ -190,7 +190,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Scan Error", func(t *testing.T) {
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
 			AddRow("invalid_uuid", userUUID, nil, "invalid_number", "US", "Chase", "debit", now)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE user_id = \\$1").
@@ -204,7 +204,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Rows Err", func(t *testing.T) {
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
 			AddRow(uuid.New(), userUUID, nil, int64(100), "US", "Chase", "debit", now).
 			RowError(0, errors.New("row error"))
 
@@ -221,7 +221,7 @@ func TestPgTransactionRowsRepo_GetTransactionsByUserUUID(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		txn1UUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
 		txn2UUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174002")
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "bank_name", "txn_type", "created_at"}).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
 			AddRow(txn1UUID, userUUID, nil, int64(100), "US", "Chase", "debit", now).
 			AddRow(txn2UUID, userUUID, nil, int64(200), "US", "Citi", "credit", now)
 
@@ -282,9 +282,9 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Exec Error", func(t *testing.T) {
-		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", BankName: "Chase", Type: "debit"}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", PaymentMethod: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.ID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ID).
 			WillReturnError(errors.New("update failed"))
 
 		err := repo.UpdateTransaction(txn)
@@ -294,9 +294,9 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", BankName: "Chase", Type: "debit"}
+		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", PaymentMethod: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.BankName, txn.Type, txn.ID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		err := repo.UpdateTransaction(txn)

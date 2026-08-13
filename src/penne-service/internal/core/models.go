@@ -13,14 +13,14 @@ const (
 )
 
 type Transaction struct {
-	ID         uuid.UUID  `json:"id" db:"id"`
-	UserID     uuid.UUID  `json:"user_id" db:"user_id"`
-	EnvelopeID *uuid.UUID `json:"envelope_id" db:"envelope_id"` // Nullable if uncategorized yet
-	AmountE5   int64      `json:"amount_e5" db:"amount_e5"`
-	Type       string     `json:"txn_type" db:"txn_type"`
-	BankName   string     `json:"bank_name" db:"bank_name"`
-	CountryISO string     `json:"country_iso2" db:"country_iso2"`
-	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	ID            uuid.UUID  `json:"id" db:"id"`
+	UserID        uuid.UUID  `json:"user_id" db:"user_id"`
+	EnvelopeID    *uuid.UUID `json:"envelope_id" db:"envelope_id"` // Nullable if uncategorized yet
+	AmountE5      int64      `json:"amount_e5" db:"amount_e5"`
+	Type          string     `json:"txn_type" db:"txn_type"`
+	PaymentMethod string     `json:"payment_method" db:"payment_method"`
+	CountryISO    string     `json:"country_iso2" db:"country_iso2"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
 }
 
 type TransactionRepository interface {
