@@ -12,4 +12,5 @@ var Module = fx.Module(
 	fx.Provide(NewEnvelopeGroupRepository),
 	fx.Provide(NewPgEnvelopeRepo),
 	fx.Provide(NewPgAllocationRepo),
+	fx.Provide(NewPgShortcutIntentRepo),
 )

@@ -123,3 +123,21 @@ type AllocationRepository interface {
 	UpdateAllocation(allocation *Allocation) error
 	DeleteAllocation(id uuid.UUID) error
 }
+
+type ShortcutIntent struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	EnvelopeID *uuid.UUID `json:"envelope_id"`
+	Latitude   float64    `json:"latitude"`
+	Longitude  float64    `json:"longitude"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type ShortcutIntentRepository interface {
+	CreateShortcutIntent(shortcutIntent *ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error)
+	GetShortcutIntentByID(id uuid.UUID) (*ShortcutIntent, error)
+	GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*ShortcutIntent, error)
+	UpdateShortcutIntent(shortcutIntent *ShortcutIntent, Tx *sql.Tx) error
+	DeleteShortcutIntent(id uuid.UUID) error
+}

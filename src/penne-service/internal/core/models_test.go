@@ -93,4 +93,33 @@ func TestModelsJSON(t *testing.T) {
 			t.Errorf("unmarshalled token mismatch: got %+v, want %+v", decoded, token)
 		}
 	})
+
+	t.Run("ShortcutIntent JSON", func(t *testing.T) {
+		intentID := uuid.New()
+		envID := uuid.New()
+		intent := ShortcutIntent{
+			ID:         intentID,
+			UserID:     userUUID,
+			EnvelopeID: &envID,
+			Latitude:   12.9716,
+			Longitude:  77.5946,
+			Status:     "pending",
+			CreatedAt:  now,
+		}
+
+		data, err := json.Marshal(intent)
+		if err != nil {
+			t.Fatalf("failed to marshal ShortcutIntent: %v", err)
+		}
+
+		var decoded ShortcutIntent
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("failed to unmarshal ShortcutIntent: %v", err)
+		}
+
+		if decoded.ID != intent.ID || decoded.UserID != intent.UserID || decoded.Status != intent.Status {
+			t.Errorf("unmarshalled shortcut intent mismatch: got %+v, want %+v", decoded, intent)
+		}
+	})
 }
+
