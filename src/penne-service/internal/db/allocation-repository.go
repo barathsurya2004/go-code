@@ -160,9 +160,7 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 			return nil, err
 		}
 		allocations = append(allocations, allocation)
-		if _, ok := envelopeMap[allocation.EnvelopeID]; ok {
-			delete(envelopeMap, allocation.EnvelopeID)
-		}
+		delete(envelopeMap, allocation.EnvelopeID)
 	}
 
 	for _, envelope := range envelopeMap {

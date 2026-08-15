@@ -345,3 +345,68 @@ func TestPgTransactionRowsRepo_DeleteTransaction(t *testing.T) {
 		}
 	})
 }
+
+func TestPgTransactionRowsRepo_GetTransactionByTime(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgTransactionRowsRepo(db)
+	now := time.Now()
+
+	t.Run("Zero Time Range", func(t *testing.T) {
+		_, err := repo.GetTransactionByTime(time.Time{}, now, nil)
+		if err == nil || err.Error() != "time range is required" {
+			t.Errorf("expected time range required error, got %v", err)
+		}
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		txnID := uuid.New()
+		userID := uuid.New()
+		t1 := now.Add(-time.Hour)
+		t2 := now
+
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "shortcut_intent_id"}).
+			AddRow(txnID, userID, nil, 500, "US", "Card", "debit", now, nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id FROM transactionrows").
+			WithArgs(t1, t2).
+			WillReturnRows(rows)
+
+		txn, err := repo.GetTransactionByTime(t1, t2, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if txn == nil || txn.ID != txnID {
+			t.Errorf("expected transaction %v, got %v", txnID, txn)
+		}
+	})
+
+	t.Run("Success With Tx", func(t *testing.T) {
+		txnID := uuid.New()
+		userID := uuid.New()
+		t1 := now.Add(-time.Hour)
+		t2 := now
+
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "shortcut_intent_id"}).
+			AddRow(txnID, userID, nil, 500, "US", "Card", "debit", now, nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id FROM transactionrows").
+			WithArgs(t1, t2).
+			WillReturnRows(rows)
+
+		txn, err := repo.GetTransactionByTime(t1, t2, tx)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if txn == nil || txn.ID != txnID {
+			t.Errorf("expected transaction %v, got %v", txnID, txn)
+		}
+	})
+}
