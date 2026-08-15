@@ -534,7 +534,6 @@ func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter,
 		Latitude:   req.Latitude,
 		Longitude:  req.Longitude,
 		Status:     core.StatusPending,
-		CreatedAt:  req.CreatedAt,
 	}
 
 	if shortcutIntent.ID, err = h.ShortcutIntentRepo.CreateShortcutIntent(shortcutIntent, sx); err != nil {

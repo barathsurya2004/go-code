@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -76,7 +77,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 	}
 	defer db.Close()
 
-	handler := NewTransactionServiceHandler(repo, logger, db)
+	shortcutIntentRepo := &mockShortcutIntentRepo{}
+	handler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db)
 	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateTransaction - Invalid Payload", func(t *testing.T) {
@@ -338,6 +340,107 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("CreateTransaction - Success with Pending Shortcut Intent", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+
+		txnID := uuid.New()
+		intentID := uuid.New()
+
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return &core.ShortcutIntent{ID: intentID}, nil
+			},
+			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+				return nil
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+
+		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		h.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateTransaction - Error Fetching Pending Shortcut Intent", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		localTxnRepo := &mockTxnRepo{}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, errors.New("db error")
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+
+		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		h.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateTransaction - Error Updating Shortcut Intent", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		txnID := uuid.New()
+		intentID := uuid.New()
+
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return &core.ShortcutIntent{ID: intentID}, nil
+			},
+			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+				return errors.New("update intent error")
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+
+		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		h.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 }

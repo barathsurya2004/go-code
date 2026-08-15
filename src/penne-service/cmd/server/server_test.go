@@ -83,6 +83,9 @@ func (d *dummyShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.Shor
 	return nil
 }
 func (d *dummyShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error { return nil }
+func (d *dummyShortcutIntentRepo) GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+	return nil, nil
+}
 
 type dummyEnvelopeGroupRepo struct{}
 
@@ -139,7 +142,7 @@ func TestServer(t *testing.T) {
 	defer mockDB.Close()
 
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
-	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log, mockDB)
+	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB)
 	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, &dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB)
 	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 	shortcutIntentRepo := &dummyShortcutIntentRepo{}

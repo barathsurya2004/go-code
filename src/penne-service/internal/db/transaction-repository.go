@@ -23,8 +23,8 @@ func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository {
 
 func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type,created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)RETURNING id
+		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type,created_at,shortcut_intent_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)RETURNING id
 	`
 
 	// validation checks
@@ -51,6 +51,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.PaymentMethod,
 			txn.Type,
 			txn.CreatedAt,
+			txn.ShortcutIntentID,
 		)
 	} else {
 		row = r.db.QueryRow(query,
@@ -61,6 +62,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.PaymentMethod,
 			txn.Type,
 			txn.CreatedAt,
+			txn.ShortcutIntentID,
 		)
 	}
 	if err := row.Scan(&txnID); err != nil {
@@ -72,7 +74,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 
 func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
 		FROM transactionrows
 		WHERE id = $1
 	`
@@ -91,6 +93,7 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 		&txn.PaymentMethod,
 		&txn.Type,
 		&txn.CreatedAt,
+		&txn.ShortcutIntentID,
 	)
 	if err != nil {
 		return nil, err

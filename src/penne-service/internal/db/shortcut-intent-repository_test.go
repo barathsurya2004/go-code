@@ -345,3 +345,73 @@ func TestPgShortcutIntentRepo_DeleteShortcutIntent(t *testing.T) {
 		}
 	})
 }
+
+func TestPgShortcutIntentRepo_GetPendingRecentShortcutIntent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgShortcutIntentRepo(db)
+	userUUID := uuid.New()
+	intentID := uuid.New()
+	now := time.Now()
+	tLower := now.Add(-10 * time.Minute)
+	tUpper := now.Add(3 * time.Minute)
+
+	t.Run("Empty UserUUID Error", func(t *testing.T) {
+		_, err := repo.GetPendingRecentShortcutIntent(uuid.Nil, nil, tLower, tUpper)
+		if err == nil || err.Error() != "user UUID is required" {
+			t.Errorf("expected user UUID is required error, got %v", err)
+		}
+	})
+
+	t.Run("Zero Time Error", func(t *testing.T) {
+		_, err := repo.GetPendingRecentShortcutIntent(userUUID, nil, time.Time{}, tUpper)
+		if err == nil || err.Error() != "time lowerbound and upperbound are required" {
+			t.Errorf("expected time lowerbound and upperbound are required error, got %v", err)
+		}
+	})
+
+	t.Run("Lowerbound After Upperbound Error", func(t *testing.T) {
+		_, err := repo.GetPendingRecentShortcutIntent(userUUID, nil, tUpper, tLower)
+		if err == nil || err.Error() != "time lowerbound cannot be after time upperbound" {
+			t.Errorf("expected lowerbound cannot be after upperbound error, got %v", err)
+		}
+	})
+
+	t.Run("Success With Tx", func(t *testing.T) {
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at", "transaction_id"}).
+			AddRow(intentID, userUUID, nil, 12.97, 77.59, "pending", now, nil)
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent").
+			WithArgs(userUUID, core.StatusPending, tLower, tUpper).
+			WillReturnRows(rows)
+
+		res, err := repo.GetPendingRecentShortcutIntent(userUUID, tx, tLower, tUpper)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.ID != intentID {
+			t.Errorf("expected intent ID %v, got %v", intentID, res.ID)
+		}
+	})
+
+	t.Run("Success Without Tx", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at", "transaction_id"}).
+			AddRow(intentID, userUUID, nil, 12.97, 77.59, "pending", now, nil)
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent").
+			WithArgs(userUUID, core.StatusPending, tLower, tUpper).
+			WillReturnRows(rows)
+
+		res, err := repo.GetPendingRecentShortcutIntent(userUUID, nil, tLower, tUpper)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.ID != intentID {
+			t.Errorf("expected intent ID %v, got %v", intentID, res.ID)
+		}
+	})
+}

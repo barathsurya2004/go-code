@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
@@ -11,16 +12,18 @@ import (
 )
 
 type TransactionServiceHandler struct {
-	transactionRepo core.TransactionRepository
-	logger          *zap.Logger
-	db              *sql.DB
+	transactionRepo    core.TransactionRepository
+	shortcutIntentRepo core.ShortcutIntentRepository
+	logger             *zap.Logger
+	db                 *sql.DB
 }
 
-func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, logger *zap.Logger, db *sql.DB) *TransactionServiceHandler {
+func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, shortcutIntentRepo core.ShortcutIntentRepository, logger *zap.Logger, db *sql.DB) *TransactionServiceHandler {
 	return &TransactionServiceHandler{
-		transactionRepo: transactionRepo,
-		logger:          logger,
-		db:              db,
+		transactionRepo:    transactionRepo,
+		shortcutIntentRepo: shortcutIntentRepo,
+		logger:             logger,
+		db:                 db,
 	}
 }
 
@@ -48,7 +51,8 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 	}
 	defer tx.Rollback()
 
-	if _, err := h.transactionRepo.CreateTransaction(&txn, tx); err != nil {
+	txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, tx)
+	if err != nil {
 		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to create transaction", zap.Error(err))
 		return
@@ -61,7 +65,11 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(txn)
+	json.NewEncoder(w).Encode(struct {
+		TxnUUID uuid.UUID `json:"txn_uuid"`
+	}{
+		TxnUUID: *txnID,
+	})
 }
 
 func (h *TransactionServiceHandler) GetTransactionByUUID(w http.ResponseWriter, r *http.Request) {
@@ -160,4 +168,44 @@ func (h *TransactionServiceHandler) DeleteTransaction(w http.ResponseWriter, r *
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transaction, userUUID uuid.UUID, Tx *sql.Tx) (*uuid.UUID, error) {
+	if txn.CreatedAt.IsZero() {
+		txn.CreatedAt = time.Now()
+	}
+	TimeUpperbound := txn.CreatedAt.Add(3 * time.Minute)
+	TimeLowerbound := txn.CreatedAt.Add(-10 * time.Minute)
+	pendingShortcutIntent, err := h.shortcutIntentRepo.GetPendingRecentShortcutIntent(userUUID, Tx, TimeLowerbound, TimeUpperbound)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			h.logger.Error("error in fetching pending shortcuts for transaction", zap.Error(err))
+			return nil, err
+		}
+		h.logger.Info("no pending shortcuts found for transaction")
+	}
+	if pendingShortcutIntent != nil {
+		txn.ShortcutIntentID = pendingShortcutIntent.ID
+		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
+		if err != nil {
+			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
+			return nil, err
+		}
+		pendingShortcutIntent.TransactionID = &txnID
+		pendingShortcutIntent.Status = core.StatusSettled
+		if err := h.shortcutIntentRepo.UpdateShortcutIntent(pendingShortcutIntent, Tx); err != nil {
+			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
+			return nil, err
+		}
+		return &txnID, nil
+	} else {
+		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
+		if err != nil {
+			h.logger.Error("Failed to create transaction and workflow", zap.Error(err))
+			return nil, err
+		}
+		h.logger.Info("Waiting for the shortcut intent to trigger the attribution")
+		return &txnID, nil
+	}
+
 }

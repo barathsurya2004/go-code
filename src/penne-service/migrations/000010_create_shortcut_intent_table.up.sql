@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS shortcut_intent (
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     status VARCHAR(255) NOT NULL,
-    created_at DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     transaction_id UUID REFERENCES transactionrows(id) ON DELETE SET NULL
 );
 

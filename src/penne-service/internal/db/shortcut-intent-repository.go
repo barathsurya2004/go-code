@@ -192,3 +192,52 @@ func (r *pgShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error {
 	_, err := r.db.ExecContext(context.Background(), query, id)
 	return err
 }
+
+func (r *pgShortcutIntentRepo) GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+	query := `
+		SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
+		FROM shortcut_intent
+		WHERE user_id = $1 AND status = $2 AND created_at BETWEEN $3 AND $4
+	`
+
+	// validation checks
+	if userUUID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	if time_lowerbound.IsZero() || time_upperbound.IsZero() {
+		return nil, errors.New("time lowerbound and upperbound are required")
+	}
+	if time_lowerbound.After(time_upperbound) {
+		return nil, errors.New("time lowerbound cannot be after time upperbound")
+	}
+
+	shortcutIntent := &core.ShortcutIntent{}
+	var err error
+	if Tx != nil {
+		err = Tx.QueryRow(query, userUUID, core.StatusPending, time_lowerbound, time_upperbound).Scan(
+			&shortcutIntent.ID,
+			&shortcutIntent.UserID,
+			&shortcutIntent.EnvelopeID,
+			&shortcutIntent.Latitude,
+			&shortcutIntent.Longitude,
+			&shortcutIntent.Status,
+			&shortcutIntent.CreatedAt,
+			&shortcutIntent.TransactionID,
+		)
+	} else {
+		err = r.db.QueryRowContext(context.Background(), query, userUUID, core.StatusPending, time_lowerbound, time_upperbound).Scan(
+			&shortcutIntent.ID,
+			&shortcutIntent.UserID,
+			&shortcutIntent.EnvelopeID,
+			&shortcutIntent.Latitude,
+			&shortcutIntent.Longitude,
+			&shortcutIntent.Status,
+			&shortcutIntent.CreatedAt,
+			&shortcutIntent.TransactionID,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return shortcutIntent, nil
+}

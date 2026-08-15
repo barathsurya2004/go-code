@@ -163,11 +163,12 @@ func (m *mockAllocationRepo) DeleteAllocation(id uuid.UUID) error {
 }
 
 type mockShortcutIntentRepo struct {
-	createFn    func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error)
-	getByIDFn   func(id uuid.UUID) (*core.ShortcutIntent, error)
-	getByUserFn func(userUUID uuid.UUID) ([]*core.ShortcutIntent, error)
-	updateFn    func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error
-	deleteFn    func(id uuid.UUID) error
+	createFn           func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error)
+	getByIDFn          func(id uuid.UUID) (*core.ShortcutIntent, error)
+	getByUserFn        func(userUUID uuid.UUID) ([]*core.ShortcutIntent, error)
+	updateFn           func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error
+	deleteFn           func(id uuid.UUID) error
+	getPendingRecentFn func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error)
 }
 
 func (m *mockShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
@@ -199,6 +200,13 @@ func (m *mockShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error {
 		return m.deleteFn(id)
 	}
 	return nil
+}
+
+func (m *mockShortcutIntentRepo) GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+	if m.getPendingRecentFn != nil {
+		return m.getPendingRecentFn(userUUID, Tx, time_lowerbound, time_upperbound)
+	}
+	return nil, nil
 }
 
 func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {

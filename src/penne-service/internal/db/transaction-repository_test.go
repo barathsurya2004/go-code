@@ -56,7 +56,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg(), txn.ShortcutIntentID).
 			WillReturnError(errors.New("db error"))
 
 		_, err := repo.CreateTransaction(txn, tx)
@@ -77,7 +77,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg(), txn.ShortcutIntentID).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, tx)
@@ -99,7 +99,7 @@ func TestPgTransactionRowsRepo_CreateTransaction(t *testing.T) {
 			Type:          "debit",
 		}
 		mock.ExpectQuery("INSERT INTO transactionrows").
-			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg()).
+			WithArgs(txn.UserID, txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, sqlmock.AnyArg(), txn.ShortcutIntentID).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genUUID))
 
 		id, err := repo.CreateTransaction(txn, nil)
@@ -143,8 +143,8 @@ func TestPgTransactionRowsRepo_GetTransactionByUUID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
-			AddRow(validUUID, userUUID, nil, int64(500), "US", "Chase", "debit", now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "shortcut_intent_id"}).
+			AddRow(validUUID, userUUID, nil, int64(500), "US", "Chase", "debit", now, nil)
 
 		mock.ExpectQuery("SELECT (.+) FROM transactionrows WHERE id = \\$1").
 			WithArgs(validUUID).

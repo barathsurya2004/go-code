@@ -147,4 +147,5 @@ type ShortcutIntentRepository interface {
 	GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*ShortcutIntent, error)
 	UpdateShortcutIntent(shortcutIntent *ShortcutIntent, Tx *sql.Tx) error
 	DeleteShortcutIntent(id uuid.UUID) error
+	GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*ShortcutIntent, error)
 }
