@@ -328,6 +328,20 @@ func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 		}
 	})
 
+	t.Run("GetEnvelopeGroupsByUserUUID - Context String UUID", func(t *testing.T) {
+		groupRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
+			return []*core.EnvelopeGroup{}, nil
+		}
+		req := httptest.NewRequest("GET", "/envelope-group", nil)
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID.String())
+		rr := httptest.NewRecorder()
+
+		handler.GetEnvelopeGroupsByUserUUID(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
 	t.Run("GetEnvelopeGroupsByUserUUID - Query Param Fallback", func(t *testing.T) {
 		groupRepo.getByUserFn = func(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) {
 			return []*core.EnvelopeGroup{{Name: "Bills"}}, nil
@@ -524,6 +538,26 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 		handler.CreateEnvelope(rr, req.WithContext(ctx))
 		if rr.Code != http.StatusInternalServerError {
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateEnvelope - Existing Envelope", func(t *testing.T) {
+		existingID := uuid.New()
+		envRepo.getByNameFn = func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return existingID, nil
+		}
+		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {
+			return &core.Envelope{ID: existingID, Name: "Groceries"}, nil
+		}
+
+		body, _ := json.Marshal(core.Envelope{Name: "Groceries"})
+		req := httptest.NewRequest("POST", "/envelope", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		handler.CreateEnvelope(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
 

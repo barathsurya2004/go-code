@@ -284,11 +284,29 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateTransaction - Transaction Not Found", func(t *testing.T) {
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return nil, errors.New("not found")
+		}
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"id":"`+validUUID.String()+`"}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.UpdateTransaction(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected status %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
 	t.Run("UpdateTransaction - Success", func(t *testing.T) {
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id}, nil
+		}
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
 			return nil
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"uuid":"`+validUUID.String()+`"}`))
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"id":"`+validUUID.String()+`"}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
@@ -427,6 +445,37 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
 				return errors.New("update intent error")
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+
+		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		h.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateTransaction - Error Creating Transaction when Pending Shortcut Exists", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return &core.ShortcutIntent{ID: uuid.New(), Status: core.StatusPending}, nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return uuid.Nil, errors.New("db create error")
 			},
 		}
 

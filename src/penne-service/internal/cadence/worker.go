@@ -1,6 +1,9 @@
 package cadence
 
 import (
+	"errors"
+	"sync"
+
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence/activities"
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence/workflows"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
@@ -10,14 +13,21 @@ import (
 	"go.uber.org/zap"
 )
 
+var registerOnce sync.Once
+
 // RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
 func RegisterWorkflowsAndActivities() {
-	workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
-	activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
+	registerOnce.Do(func() {
+		workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
+		activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
+	})
 }
 
 // StartWorker creates, registers, and starts a standalone Cadence worker instance.
 func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger) (worker.Worker, error) {
+	if serviceClient == nil {
+		return nil, errors.New("serviceClient is required")
+	}
 	RegisterWorkflowsAndActivities()
 
 	workerOptions := worker.Options{

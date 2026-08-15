@@ -1,7 +1,12 @@
 package cadence
 
 import (
+	"context"
 	"testing"
+
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 func TestCadenceConfig(t *testing.T) {
@@ -29,4 +34,31 @@ func TestNewCadenceClient(t *testing.T) {
 	if cli == nil {
 		t.Fatal("expected non-nil Cadence client")
 	}
+}
+
+func TestNewCadenceServiceClient(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := NewCadenceConfig()
+	var serviceClient workflowserviceclient.Interface
+
+	app := fx.New(
+		fx.Provide(
+			func() *CadenceConfig { return cfg },
+			func() *zap.Logger { return logger },
+			NewCadenceServiceClient,
+		),
+		fx.Populate(&serviceClient),
+	)
+
+	if err := app.Err(); err != nil {
+		t.Fatalf("expected no error initializing Cadence service client, got %v", err)
+	}
+
+	if serviceClient == nil {
+		t.Fatal("expected non-nil serviceClient")
+	}
+
+	ctx := context.Background()
+	_ = app.Start(ctx)
+	_ = app.Stop(ctx)
 }

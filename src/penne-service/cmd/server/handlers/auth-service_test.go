@@ -297,6 +297,38 @@ func TestAuthServiceHandler_SignUp(t *testing.T) {
 		}
 	})
 
+	t.Run("New User SignUp Commit Error", func(t *testing.T) {
+		mockDB, mock, _ := sqlmock.New()
+		defer mockDB.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit err"))
+
+		userRepo := &mockUserRepo{
+			getUserByEmailFn: func(email string) (*core.User, error) { return nil, errors.New("not found") },
+			createUserFn:     func(user *core.User) (uuid.UUID, error) { return userUUID, nil },
+		}
+		envGroupRepo := &mockEnvelopeGroupRepo{
+			createFn: func(envelopeGroup *core.EnvelopeGroup) (uuid.UUID, error) { return uuid.New(), nil },
+		}
+		envRepo := &mockEnvelopeRepo{
+			createFn: func(envelope *core.Envelope) (uuid.UUID, error) { return uuid.New(), nil },
+		}
+		allocRepo := &mockAllocationRepo{
+			createFn: func(allocation *core.Allocation) (uuid.UUID, error) { return uuid.New(), nil },
+		}
+		tokenRepo := &mockTokenRepo{
+			createTokenFn: func(token *core.Token) (uuid.UUID, error) { return tokenUUID, nil },
+		}
+		h := NewAuthServiceHandler(userRepo, tokenRepo, envGroupRepo, envRepo, allocRepo, log, mockDB)
+		req := httptest.NewRequest("POST", "/auth/signup", bytes.NewReader([]byte(`{"email":"new@example.com","name":"New User","password":"secret123"}`)))
+		rr := httptest.NewRecorder()
+		h.SignUp(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", rr.Code)
+		}
+	})
+
 	t.Run("New User SignUp Success", func(t *testing.T) {
 		mockDB, mock, _ := sqlmock.New()
 		defer mockDB.Close()

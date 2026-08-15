@@ -304,6 +304,30 @@ func TestPgShortcutIntentRepo_UpdateShortcutIntent(t *testing.T) {
 			t.Errorf("expected no error, got %v", err)
 		}
 	})
+
+	t.Run("Success With Tx", func(t *testing.T) {
+		now := time.Now()
+		intent := &core.ShortcutIntent{
+			ID:         intentID,
+			EnvelopeID: &envID,
+			Latitude:   12.9716,
+			Longitude:  77.5946,
+			Status:     "matched",
+			CreatedAt:  now,
+		}
+
+		mock.ExpectBegin()
+		tx, _ := db.Begin()
+
+		mock.ExpectExec("UPDATE shortcut_intent").
+			WithArgs(intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.TransactionID, intent.ID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		err := repo.UpdateShortcutIntent(intent, tx)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+	})
 }
 
 func TestPgShortcutIntentRepo_DeleteShortcutIntent(t *testing.T) {

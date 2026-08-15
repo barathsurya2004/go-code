@@ -10,21 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func main() {
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-
-	cfg := &cadence.CadenceConfig{
-		Domain:         cadence.Domain,
-		ServiceName:    cadence.WorkerServiceName,
-		CadenceService: cadence.CadenceService,
-		HostPort:       cadence.CadenceHostPort,
-	}
-
-	// 1. Setup transport & dispatcher for worker
+func createDispatcher(cfg *cadence.CadenceConfig) (*yarpc.Dispatcher, error) {
 	ch, err := tchannel.NewChannelTransport(tchannel.ServiceName(cfg.ServiceName))
 	if err != nil {
-		logger.Fatal("Failed to setup transport", zap.Error(err))
+		return nil, err
 	}
 	dispatcher := yarpc.NewDispatcher(yarpc.Config{
 		Name: cfg.ServiceName,
@@ -33,13 +22,29 @@ func main() {
 		},
 	})
 	if err := dispatcher.Start(); err != nil {
-		logger.Fatal("Failed to start dispatcher", zap.Error(err))
+		return nil, err
+	}
+	return dispatcher, nil
+}
+
+func initServiceClient(dispatcher *yarpc.Dispatcher, cfg *cadence.CadenceConfig) workflowserviceclient.Interface {
+	return workflowserviceclient.New(dispatcher.ClientConfig(cfg.CadenceService))
+}
+
+func main() {
+	logger, _ := zap.NewDevelopment()
+	defer logger.Sync()
+
+	cfg := cadence.NewCadenceConfig()
+	cfg.ServiceName = cadence.WorkerServiceName
+
+	dispatcher, err := createDispatcher(cfg)
+	if err != nil {
+		logger.Fatal("Failed to create dispatcher", zap.Error(err))
 	}
 	defer dispatcher.Stop()
 
-	serviceClient := workflowserviceclient.New(dispatcher.ClientConfig(cfg.CadenceService))
-
-	// 2. Start the Cadence worker (registers workflows & activities from internal/cadence)
+	serviceClient := initServiceClient(dispatcher, cfg)
 	w, err := cadence.StartWorker(serviceClient, cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to start worker", zap.Error(err))
@@ -47,6 +52,5 @@ func main() {
 	defer w.Stop()
 
 	fmt.Println("Worker successfully started and polling Cadence...")
-
 	select {}
 }
