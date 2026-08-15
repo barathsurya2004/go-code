@@ -5,11 +5,13 @@ CREATE TABLE IF NOT EXISTS shortcut_intent (
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     status VARCHAR(255) NOT NULL,
-    created_at DATE DEFAULT CURRENT_DATE
+    created_at DATE DEFAULT CURRENT_DATE,
+    transaction_id UUID REFERENCES transactionrows(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_shortcut_intent_user_id ON shortcut_intent(user_id);
 CREATE INDEX IF NOT EXISTS idx_shortcut_intent_envelope_id ON shortcut_intent(envelope_id);
+CREATE INDEX IF NOT EXISTS idx_shortcut_intent_transaction_id ON shortcut_intent(transaction_id);
 
 ALTER TABLE transactionrows ADD COLUMN IF NOT EXISTS shortcut_intent_id UUID REFERENCES shortcut_intent(id) ON DELETE SET NULL;
 

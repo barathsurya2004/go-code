@@ -162,15 +162,56 @@ func (m *mockAllocationRepo) DeleteAllocation(id uuid.UUID) error {
 	return nil
 }
 
+type mockShortcutIntentRepo struct {
+	createFn    func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error)
+	getByIDFn   func(id uuid.UUID) (*core.ShortcutIntent, error)
+	getByUserFn func(userUUID uuid.UUID) ([]*core.ShortcutIntent, error)
+	updateFn    func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error
+	deleteFn    func(id uuid.UUID) error
+}
+
+func (m *mockShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+	if m.createFn != nil {
+		return m.createFn(shortcutIntent, Tx)
+	}
+	return uuid.Nil, nil
+}
+func (m *mockShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.ShortcutIntent, error) {
+	if m.getByIDFn != nil {
+		return m.getByIDFn(id)
+	}
+	return nil, nil
+}
+func (m *mockShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*core.ShortcutIntent, error) {
+	if m.getByUserFn != nil {
+		return m.getByUserFn(userUUID)
+	}
+	return nil, nil
+}
+func (m *mockShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+	if m.updateFn != nil {
+		return m.updateFn(shortcutIntent, Tx)
+	}
+	return nil
+}
+func (m *mockShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error {
+	if m.deleteFn != nil {
+		return m.deleteFn(id)
+	}
+	return nil
+}
+
 func TestBudgetingServiceHandler_EnvelopeGroup(t *testing.T) {
 	logger := zap.NewNop()
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	txnRepo := &mockTxnRepo{}
+	shortcutIntentRepo := &mockShortcutIntentRepo{}
 	mockDB, _, _ := sqlmock.New()
 	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, mockDB)
 	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelopeGroup - Success", func(t *testing.T) {
@@ -417,10 +458,12 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	txnRepo := &mockTxnRepo{}
+	shortcutIntentRepo := &mockShortcutIntentRepo{}
 	mockDB, _, _ := sqlmock.New()
 	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, mockDB)
 	validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateEnvelope - Success", func(t *testing.T) {
@@ -669,10 +712,12 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 	groupRepo := &mockEnvelopeGroupRepo{}
 	envRepo := &mockEnvelopeRepo{}
 	allocRepo := &mockAllocationRepo{}
+	txnRepo := &mockTxnRepo{}
+	shortcutIntentRepo := &mockShortcutIntentRepo{}
 	mockDB, _, _ := sqlmock.New()
 	defer mockDB.Close()
 
-	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, mockDB)
+	handler := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, mockDB)
 
 	t.Run("CreateAllocation - Success", func(t *testing.T) {
 		allocRepo.createFn = func(alloc *core.Allocation) (uuid.UUID, error) {
@@ -945,7 +990,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 		dbClosed, _, _ := sqlmock.New()
 		dbClosed.Close() // closed DB will fail BeginTx
-		hClosed := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbClosed)
+		hClosed := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbClosed)
 
 		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
 		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
@@ -968,7 +1013,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 			return nil, errors.New("alloc error")
 		}
 
-		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbMock)
 		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
 		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
 		rr := httptest.NewRecorder()
@@ -994,7 +1039,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 			return nil, errors.New("env error")
 		}
 
-		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbMock)
 		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
 		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
 		rr := httptest.NewRecorder()
@@ -1020,7 +1065,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 			return &core.Envelope{ID: envID, Name: "Groceries", CountryISO: "US", Cadence: core.MonthlyCadence}, nil
 		}
 
-		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, logger, dbMock)
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbMock)
 		req := httptest.NewRequest("GET", "/api/get-active-categories", nil)
 		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
 		rr := httptest.NewRecorder()
@@ -1028,6 +1073,322 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		h.GetActiveCategoriesByUserUUID(rr, req.WithContext(ctx))
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Invalid Payload", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBufferString("invalid json"))
+		rr := httptest.NewRecorder()
+
+		handler.CreateNewShortcutIntent(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Missing User UUID", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		rr := httptest.NewRecorder()
+
+		handler.CreateNewShortcutIntent(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - BeginTx Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		dbClosed, _, _ := sqlmock.New()
+		dbClosed.Close()
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbClosed)
+
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - GetEnvelopeIdByName Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("env name error")
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - CreateShortcutIntent Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.Nil, errors.New("create intent error")
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Success (No Transaction Match)", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries", "latitude": 12.97, "longitude": 77.59})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Success (Matched Transaction)", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		txnID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+				return nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return &core.Transaction{ID: txnID}, nil
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries", "latitude": 12.97, "longitude": 77.59})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Commit Error (Pending Path)", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit error"))
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Commit Error (Settled Path)", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		txnID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit error"))
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+				return nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return &core.Transaction{ID: txnID}, nil
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - UpdateTransaction Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		txnID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return &core.Transaction{ID: txnID}, nil
+			},
+			updateTransactionFn: func(txn *core.Transaction) error {
+				return errors.New("update txn error")
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - UpdateShortcutIntent Error", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		intentID := uuid.New()
+		txnID := uuid.New()
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			createFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+				return intentID, nil
+			},
+			updateFn: func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+				return errors.New("update intent error")
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByTimeFn: func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return &core.Transaction{ID: txnID}, nil
+			},
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, localTxnRepo, localShortcutRepo, logger, dbMock)
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries"})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 }

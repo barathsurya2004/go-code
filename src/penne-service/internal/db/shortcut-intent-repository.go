@@ -22,8 +22,8 @@ func NewPgShortcutIntentRepo(db *sql.DB) core.ShortcutIntentRepository {
 
 func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO shortcut_intent (user_id, envelope_id, latitude, longitude, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+		INSERT INTO shortcut_intent (user_id, envelope_id, latitude, longitude, status, created_at, transaction_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
 	`
 
 	// validation checks
@@ -46,6 +46,7 @@ func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.Shortcu
 			shortcutIntent.Longitude,
 			shortcutIntent.Status,
 			shortcutIntent.CreatedAt,
+			shortcutIntent.TransactionID,
 		)
 	} else {
 		row = r.db.QueryRowContext(context.Background(), query,
@@ -55,6 +56,7 @@ func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.Shortcu
 			shortcutIntent.Longitude,
 			shortcutIntent.Status,
 			shortcutIntent.CreatedAt,
+			shortcutIntent.TransactionID,
 		)
 	}
 	if err := row.Scan(&shortcutIntentID); err != nil {
@@ -66,7 +68,7 @@ func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.Shortcu
 
 func (r *pgShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.ShortcutIntent, error) {
 	query := `
-		SELECT id, user_id, envelope_id, latitude, longitude, status, created_at
+		SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
 		FROM shortcut_intent
 		WHERE id = $1
 	`
@@ -85,6 +87,7 @@ func (r *pgShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.Shortc
 		&shortcutIntent.Longitude,
 		&shortcutIntent.Status,
 		&shortcutIntent.CreatedAt,
+		&shortcutIntent.TransactionID,
 	)
 	if err != nil {
 		return nil, err
@@ -94,7 +97,7 @@ func (r *pgShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.Shortc
 
 func (r *pgShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*core.ShortcutIntent, error) {
 	query := `
-		SELECT id, user_id, envelope_id, latitude, longitude, status, created_at
+		SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
 		FROM shortcut_intent
 		WHERE user_id = $1
 	`
@@ -121,6 +124,7 @@ func (r *pgShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) 
 			&shortcutIntent.Longitude,
 			&shortcutIntent.Status,
 			&shortcutIntent.CreatedAt,
+			&shortcutIntent.TransactionID,
 		); err != nil {
 			return nil, err
 		}
@@ -137,8 +141,8 @@ func (r *pgShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) 
 func (r *pgShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
 	query := `
 		UPDATE shortcut_intent
-		SET envelope_id = $1, latitude = $2, longitude = $3, status = $4, created_at = $5
-		WHERE id = $6
+		SET envelope_id = $1, latitude = $2, longitude = $3, status = $4, created_at = $5, transaction_id = $6
+		WHERE id = $7
 	`
 
 	// validation checks
@@ -149,12 +153,26 @@ func (r *pgShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.Shortcu
 		return errors.New("shortcut intent status cannot be empty")
 	}
 
+	if Tx != nil {
+		_, err := Tx.Exec(query,
+			shortcutIntent.EnvelopeID,
+			shortcutIntent.Latitude,
+			shortcutIntent.Longitude,
+			shortcutIntent.Status,
+			shortcutIntent.CreatedAt,
+			shortcutIntent.TransactionID,
+			shortcutIntent.ID,
+		)
+		return err
+	}
+
 	_, err := r.db.ExecContext(context.Background(), query,
 		shortcutIntent.EnvelopeID,
 		shortcutIntent.Latitude,
 		shortcutIntent.Longitude,
 		shortcutIntent.Status,
 		shortcutIntent.CreatedAt,
+		shortcutIntent.TransactionID,
 		shortcutIntent.ID,
 	)
 	return err

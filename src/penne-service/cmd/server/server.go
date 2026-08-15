@@ -25,6 +25,7 @@ type Application struct {
 	budgetingHandler   *handlers.BudgetingServiceHandler
 	tokenRepo          core.TokenRepository
 	authHandler        *handlers.AuthServiceHandler
+	shortcutIntentRepo core.ShortcutIntentRepository
 }
 
 func NewApplication(
@@ -33,6 +34,7 @@ func NewApplication(
 	budgetingHandler *handlers.BudgetingServiceHandler,
 	tokenRepo core.TokenRepository,
 	authHandler *handlers.AuthServiceHandler,
+	shortcutIntentRepo core.ShortcutIntentRepository,
 ) *Application {
 	return &Application{
 		transactionHandler: transactionHandler,
@@ -40,6 +42,7 @@ func NewApplication(
 		budgetingHandler:   budgetingHandler,
 		tokenRepo:          tokenRepo,
 		authHandler:        authHandler,
+		shortcutIntentRepo: shortcutIntentRepo,
 	}
 }
 
@@ -90,6 +93,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 
 	// apis
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
+	mux.HandleFunc("/api/create-new-intent", app.budgetingHandler.CreateNewShortcutIntent).Methods("POST")
 	mux.Use(CORSMiddleware)
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }

@@ -25,6 +25,7 @@ func TestModule(t *testing.T) {
 			func() core.EnvelopeGroupRepository { return &mockEnvelopeGroupRepo{} },
 			func() core.EnvelopeRepository { return &mockEnvelopeRepo{} },
 			func() core.AllocationRepository { return &mockAllocationRepo{} },
+			func() core.ShortcutIntentRepository { return &mockShortcutIntentRepo{} },
 			func() *sql.DB {
 				db, _, _ := sqlmock.New()
 				return db

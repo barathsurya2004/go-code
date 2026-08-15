@@ -12,26 +12,32 @@ import (
 )
 
 type BudgetingServiceHandler struct {
-	envelopeGroupRepo core.EnvelopeGroupRepository
-	envelopeRepo      core.EnvelopeRepository
-	allocationRepo    core.AllocationRepository
-	logger            *zap.Logger
-	db                *sql.DB
+	envelopeGroupRepo  core.EnvelopeGroupRepository
+	envelopeRepo       core.EnvelopeRepository
+	allocationRepo     core.AllocationRepository
+	ShortcutIntentRepo core.ShortcutIntentRepository
+	TransactionRepo    core.TransactionRepository
+	logger             *zap.Logger
+	db                 *sql.DB
 }
 
 func NewBudgetingServiceHandler(
 	envelopeGroupRepo core.EnvelopeGroupRepository,
 	envelopeRepo core.EnvelopeRepository,
 	allocationRepo core.AllocationRepository,
+	TransactionRepo core.TransactionRepository,
+	shortcutIntentRepo core.ShortcutIntentRepository,
 	logger *zap.Logger,
 	db *sql.DB,
 ) *BudgetingServiceHandler {
 	return &BudgetingServiceHandler{
-		envelopeGroupRepo: envelopeGroupRepo,
-		envelopeRepo:      envelopeRepo,
-		allocationRepo:    allocationRepo,
-		logger:            logger,
-		db:                db,
+		envelopeGroupRepo:  envelopeGroupRepo,
+		envelopeRepo:       envelopeRepo,
+		allocationRepo:     allocationRepo,
+		ShortcutIntentRepo: shortcutIntentRepo,
+		TransactionRepo:    TransactionRepo,
+		logger:             logger,
+		db:                 db,
 	}
 }
 
@@ -483,4 +489,104 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(budgetCategories)
+}
+
+func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter, r *http.Request) {
+	type createNewShortcutIntentRequest struct {
+		Name      string    `json:"name"`
+		Latitude  float64   `json:"latitude"`
+		Longitude float64   `json:"longitude"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	var req createNewShortcutIntentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error("Failed to decode shortcut intent payload", zap.Error(err))
+		http.Error(w, "Failed to decode shortcut intent payload", http.StatusBadRequest)
+		return
+	}
+
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		http.Error(w, "Missing user UUID", http.StatusBadRequest)
+		h.logger.Error("Missing user UUID")
+		return
+	}
+
+	sx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		h.logger.Error("Failed to begin transaction", zap.Error(err))
+		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+		return
+	}
+	defer sx.Rollback()
+
+	envID, err := h.envelopeRepo.GetEnvelopeIdByName(req.Name, userUUID, sx)
+	if err != nil {
+		h.logger.Error("Failed to get envelope ID by name", zap.String("name", req.Name), zap.Error(err))
+		http.Error(w, "Failed to get envelope ID by name", http.StatusInternalServerError)
+		return
+	}
+
+	shortcutIntent := &core.ShortcutIntent{
+		UserID:     userUUID,
+		EnvelopeID: &envID,
+		Latitude:   req.Latitude,
+		Longitude:  req.Longitude,
+		Status:     core.StatusPending,
+		CreatedAt:  req.CreatedAt,
+	}
+
+	if shortcutIntent.ID, err = h.ShortcutIntentRepo.CreateShortcutIntent(shortcutIntent, sx); err != nil {
+		h.logger.Error("Failed to create shortcut intent", zap.Error(err))
+		http.Error(w, "Failed to create shortcut intent", http.StatusInternalServerError)
+		return
+	}
+
+	err = h.IntentProcessingWorkflow(shortcutIntent, userUUID, sx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			h.logger.Info("No matching transaction found for intent, keeping intent pending")
+			if err := sx.Commit(); err != nil {
+				h.logger.Error("Failed to commit transaction", zap.Error(err))
+				http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		h.logger.Error("Failed to process shortcut intent", zap.Error(err))
+		http.Error(w, "Failed to process shortcut intent", http.StatusInternalServerError)
+		return
+	}
+
+	if err := sx.Commit(); err != nil {
+		h.logger.Error("Failed to commit transaction", zap.Error(err))
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(shortcutIntent)
+}
+
+func (h *BudgetingServiceHandler) IntentProcessingWorkflow(shortcutIntent *core.ShortcutIntent, userUUID uuid.UUID, Tx *sql.Tx) error {
+	TimeLowerbound := shortcutIntent.CreatedAt.Add(-10 * time.Minute)
+	TimeUpperbound := shortcutIntent.CreatedAt.Add(3 * time.Minute)
+	transaction, err := h.TransactionRepo.GetTransactionByTime(TimeLowerbound, TimeUpperbound, Tx)
+	if err != nil {
+		return err
+	}
+	transaction.EnvelopeID = shortcutIntent.EnvelopeID
+	transaction.ShortcutIntentID = shortcutIntent.ID
+	if err := h.TransactionRepo.UpdateTransaction(transaction, Tx); err != nil {
+		h.logger.Error("Failed to update transaction with envelope ID", zap.Error(err))
+		return err
+	}
+
+	shortcutIntent.Status = core.StatusSettled
+	shortcutIntent.TransactionID = &transaction.ID
+	err = h.ShortcutIntentRepo.UpdateShortcutIntent(shortcutIntent, Tx)
+	return err
 }

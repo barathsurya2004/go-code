@@ -10,24 +10,30 @@ import (
 const (
 	AuthToken   = "auth_token"
 	DefaultName = "default"
+
+	StatusPending = "PENDING"
+	StatusSettled = "SETTLED"
+	StatusExpired = "EXPIRED"
 )
 
 type Transaction struct {
-	ID            uuid.UUID  `json:"id" db:"id"`
-	UserID        uuid.UUID  `json:"user_id" db:"user_id"`
-	EnvelopeID    *uuid.UUID `json:"envelope_id" db:"envelope_id"` // Nullable if uncategorized yet
-	AmountE5      int64      `json:"amount_e5" db:"amount_e5"`
-	Type          string     `json:"txn_type" db:"txn_type"`
-	PaymentMethod string     `json:"payment_method" db:"payment_method"`
-	CountryISO    string     `json:"country_iso2" db:"country_iso2"`
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	ID               uuid.UUID  `json:"id" db:"id"`
+	UserID           uuid.UUID  `json:"user_id" db:"user_id"`
+	EnvelopeID       *uuid.UUID `json:"envelope_id" db:"envelope_id"` // Nullable if uncategorized yet
+	AmountE5         int64      `json:"amount_e5" db:"amount_e5"`
+	Type             string     `json:"txn_type" db:"txn_type"`
+	PaymentMethod    string     `json:"payment_method" db:"payment_method"`
+	CountryISO       string     `json:"country_iso2" db:"country_iso2"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+	ShortcutIntentID uuid.UUID  `json:"shortcut_intent_id" db:"shortcut_intent_id"`
 }
 
 type TransactionRepository interface {
 	CreateTransaction(txn *Transaction, Tx *sql.Tx) (uuid.UUID, error)
 	GetTransactionByUUID(uuid uuid.UUID) (*Transaction, error)
 	GetTransactionsByUserUUID(userUUID uuid.UUID) ([]*Transaction, error)
-	UpdateTransaction(txn *Transaction) error
+	GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*Transaction, error)
+	UpdateTransaction(txn *Transaction, Tx *sql.Tx) error
 	DeleteTransaction(uuid uuid.UUID) error
 }
 
@@ -125,13 +131,14 @@ type AllocationRepository interface {
 }
 
 type ShortcutIntent struct {
-	ID         uuid.UUID  `json:"id"`
-	UserID     uuid.UUID  `json:"user_id"`
-	EnvelopeID *uuid.UUID `json:"envelope_id"`
-	Latitude   float64    `json:"latitude"`
-	Longitude  float64    `json:"longitude"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID            uuid.UUID  `json:"id"`
+	UserID        uuid.UUID  `json:"user_id"`
+	EnvelopeID    *uuid.UUID `json:"envelope_id"`
+	Latitude      float64    `json:"latitude"`
+	Longitude     float64    `json:"longitude"`
+	Status        string     `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+	TransactionID *uuid.UUID `json:"transaction_id"`
 }
 
 type ShortcutIntentRepository interface {

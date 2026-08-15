@@ -56,7 +56,7 @@ func TestPgShortcutIntentRepo_CreateShortcutIntent(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO shortcut_intent").
-			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt).
+			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.TransactionID).
 			WillReturnError(errors.New("db insert error"))
 
 		_, err := repo.CreateShortcutIntent(intent, tx)
@@ -74,7 +74,7 @@ func TestPgShortcutIntentRepo_CreateShortcutIntent(t *testing.T) {
 		}
 		genID := uuid.New()
 		mock.ExpectQuery("INSERT INTO shortcut_intent").
-			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, sqlmock.AnyArg()).
+			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, sqlmock.AnyArg(), intent.TransactionID).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(genID))
 
 		id, err := repo.CreateShortcutIntent(intent, nil)
@@ -113,7 +113,7 @@ func TestPgShortcutIntentRepo_GetShortcutIntentByID(t *testing.T) {
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE id = \\$1").
 			WithArgs(intentID).
 			WillReturnError(sql.ErrNoRows)
 
@@ -125,10 +125,10 @@ func TestPgShortcutIntentRepo_GetShortcutIntentByID(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		now := time.Now()
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at"}).
-			AddRow(intentID, userUUID, envID, 12.9716, 77.5946, "matched", now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at", "transaction_id"}).
+			AddRow(intentID, userUUID, envID, 12.9716, 77.5946, "matched", now, nil)
 
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE id = \\$1").
 			WithArgs(intentID).
 			WillReturnRows(rows)
 
@@ -166,7 +166,7 @@ func TestPgShortcutIntentRepo_GetShortcutIntentsByUserUUID(t *testing.T) {
 	})
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE user_id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnError(errors.New("query failed"))
 
@@ -178,7 +178,7 @@ func TestPgShortcutIntentRepo_GetShortcutIntentsByUserUUID(t *testing.T) {
 
 	t.Run("Scan Error", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id"}).AddRow("invalid-uuid")
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE user_id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -190,11 +190,11 @@ func TestPgShortcutIntentRepo_GetShortcutIntentsByUserUUID(t *testing.T) {
 
 	t.Run("Row Iteration Error", func(t *testing.T) {
 		now := time.Now()
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at"}).
-			AddRow(uuid.New(), userUUID, uuid.New(), 12.9716, 77.5946, "pending", now).
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at", "transaction_id"}).
+			AddRow(uuid.New(), userUUID, uuid.New(), 12.9716, 77.5946, "pending", now, nil).
 			RowError(0, errors.New("row iteration error"))
 
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE user_id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -209,11 +209,11 @@ func TestPgShortcutIntentRepo_GetShortcutIntentsByUserUUID(t *testing.T) {
 		intent1ID, intent2ID := uuid.New(), uuid.New()
 		env1ID, env2ID := uuid.New(), uuid.New()
 
-		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at"}).
-			AddRow(intent1ID, userUUID, env1ID, 12.9716, 77.5946, "pending", now).
-			AddRow(intent2ID, userUUID, env2ID, 13.0827, 80.2707, "matched", now)
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "latitude", "longitude", "status", "created_at", "transaction_id"}).
+			AddRow(intent1ID, userUUID, env1ID, 12.9716, 77.5946, "pending", now, nil).
+			AddRow(intent2ID, userUUID, env2ID, 13.0827, 80.2707, "matched", now, nil)
 
-		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at FROM shortcut_intent WHERE user_id = \\$1").
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id FROM shortcut_intent WHERE user_id = \\$1").
 			WithArgs(userUUID).
 			WillReturnRows(rows)
 
@@ -275,7 +275,7 @@ func TestPgShortcutIntentRepo_UpdateShortcutIntent(t *testing.T) {
 		}
 
 		mock.ExpectExec("UPDATE shortcut_intent").
-			WithArgs(intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.ID).
+			WithArgs(intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.TransactionID, intent.ID).
 			WillReturnError(errors.New("update error"))
 
 		err := repo.UpdateShortcutIntent(intent, nil)
@@ -296,7 +296,7 @@ func TestPgShortcutIntentRepo_UpdateShortcutIntent(t *testing.T) {
 		}
 
 		mock.ExpectExec("UPDATE shortcut_intent").
-			WithArgs(intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.ID).
+			WithArgs(intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.TransactionID, intent.ID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		err := repo.UpdateShortcutIntent(intent, nil)

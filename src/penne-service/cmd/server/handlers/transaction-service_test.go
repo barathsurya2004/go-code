@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -21,6 +22,7 @@ type mockTxnRepo struct {
 	getTransactionsByUserUUIDFn func(userUUID uuid.UUID) ([]*core.Transaction, error)
 	updateTransactionFn         func(txn *core.Transaction) error
 	deleteTransactionFn         func(id uuid.UUID) error
+	getTransactionByTimeFn      func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -44,7 +46,7 @@ func (m *mockTxnRepo) GetTransactionsByUserUUID(userUUID uuid.UUID) ([]*core.Tra
 	return nil, nil
 }
 
-func (m *mockTxnRepo) UpdateTransaction(txn *core.Transaction) error {
+func (m *mockTxnRepo) UpdateTransaction(txn *core.Transaction, Tx *sql.Tx) error {
 	if m.updateTransactionFn != nil {
 		return m.updateTransactionFn(txn)
 	}
@@ -56,6 +58,13 @@ func (m *mockTxnRepo) DeleteTransaction(id uuid.UUID) error {
 		return m.deleteTransactionFn(id)
 	}
 	return nil
+}
+
+func (m *mockTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+	if m.getTransactionByTimeFn != nil {
+		return m.getTransactionByTimeFn(time_lowerbound, time_upperbound, Tx)
+	}
+	return nil, nil
 }
 
 func TestTransactionServiceHandler(t *testing.T) {

@@ -62,8 +62,27 @@ func (d *dummyTxnRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, er
 func (d *dummyTxnRepo) GetTransactionsByUserUUID(id uuid.UUID) ([]*core.Transaction, error) {
 	return nil, nil
 }
-func (d *dummyTxnRepo) UpdateTransaction(t *core.Transaction) error { return nil }
-func (d *dummyTxnRepo) DeleteTransaction(id uuid.UUID) error        { return nil }
+func (d *dummyTxnRepo) UpdateTransaction(t *core.Transaction, Tx *sql.Tx) error { return nil }
+func (d *dummyTxnRepo) DeleteTransaction(id uuid.UUID) error                     { return nil }
+func (d *dummyTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+	return nil, nil
+}
+
+type dummyShortcutIntentRepo struct{}
+
+func (d *dummyShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (d *dummyShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.ShortcutIntent, error) {
+	return nil, nil
+}
+func (d *dummyShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*core.ShortcutIntent, error) {
+	return nil, nil
+}
+func (d *dummyShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+	return nil
+}
+func (d *dummyShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error { return nil }
 
 type dummyEnvelopeGroupRepo struct{}
 
@@ -121,8 +140,9 @@ func TestServer(t *testing.T) {
 
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, log, mockDB)
-	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
+	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, &dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB)
 	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
+	shortcutIntentRepo := &dummyShortcutIntentRepo{}
 
 	t.Run("NewMux", func(t *testing.T) {
 		m := NewMux()
@@ -132,15 +152,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler {
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler, shortcutIntentRepo)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler || app.shortcutIntentRepo != shortcutIntentRepo {
 			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler)
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler, shortcutIntentRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

@@ -134,7 +134,7 @@ func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *
 		newTxn.EnvelopeID = txn.EnvelopeID
 	}
 
-	if err := h.transactionRepo.UpdateTransaction(newTxn); err != nil {
+	if err := h.transactionRepo.UpdateTransaction(newTxn, nil); err != nil {
 		http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to update transaction", zap.Error(err))
 		return

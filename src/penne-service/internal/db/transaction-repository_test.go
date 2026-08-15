@@ -251,7 +251,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 
 	t.Run("Empty UUID", func(t *testing.T) {
 		txn := &core.Transaction{ID: uuid.Nil}
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction UUID is required" {
 			t.Errorf("expected empty UUID error, got %v", err)
 		}
@@ -259,7 +259,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 
 	t.Run("Negative Amount", func(t *testing.T) {
 		txn := &core.Transaction{ID: validUUID, AmountE5: -5}
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction amount cannot be negative" {
 			t.Errorf("expected negative amount error, got %v", err)
 		}
@@ -267,7 +267,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 
 	t.Run("Empty CountryISO", func(t *testing.T) {
 		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: ""}
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction country ISO cannot be empty" {
 			t.Errorf("expected empty country ISO error, got %v", err)
 		}
@@ -275,7 +275,7 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 
 	t.Run("Empty Type", func(t *testing.T) {
 		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", Type: ""}
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err == nil || err.Error() != "transaction type cannot be empty" {
 			t.Errorf("expected empty type error, got %v", err)
 		}
@@ -284,10 +284,10 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	t.Run("Exec Error", func(t *testing.T) {
 		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", PaymentMethod: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ShortcutIntentID, txn.ID).
 			WillReturnError(errors.New("update failed"))
 
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -296,10 +296,10 @@ func TestPgTransactionRowsRepo_UpdateTransaction(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		txn := &core.Transaction{ID: validUUID, AmountE5: 5, CountryISO: "US", PaymentMethod: "Chase", Type: "debit"}
 		mock.ExpectExec("UPDATE transactionrows").
-			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ID).
+			WithArgs(txn.EnvelopeID, txn.AmountE5, txn.CountryISO, txn.PaymentMethod, txn.Type, txn.ShortcutIntentID, txn.ID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		err := repo.UpdateTransaction(txn)
+		err := repo.UpdateTransaction(txn, nil)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
