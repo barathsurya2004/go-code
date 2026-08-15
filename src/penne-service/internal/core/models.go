@@ -25,7 +25,7 @@ type Transaction struct {
 	PaymentMethod    string     `json:"payment_method" db:"payment_method"`
 	CountryISO       string     `json:"country_iso2" db:"country_iso2"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
-	ShortcutIntentID uuid.UUID  `json:"shortcut_intent_id" db:"shortcut_intent_id"`
+	ShortcutIntentID *uuid.UUID `json:"shortcut_intent_id" db:"shortcut_intent_id"`
 }
 
 type TransactionRepository interface {

@@ -578,7 +578,7 @@ func (h *BudgetingServiceHandler) IntentProcessingWorkflow(shortcutIntent *core.
 		return err
 	}
 	transaction.EnvelopeID = shortcutIntent.EnvelopeID
-	transaction.ShortcutIntentID = shortcutIntent.ID
+	transaction.ShortcutIntentID = &shortcutIntent.ID
 	if err := h.TransactionRepo.UpdateTransaction(transaction, Tx); err != nil {
 		h.logger.Error("Failed to update transaction with envelope ID", zap.Error(err))
 		return err

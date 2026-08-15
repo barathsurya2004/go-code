@@ -185,7 +185,7 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		h.logger.Info("no pending shortcuts found for transaction")
 	}
 	if pendingShortcutIntent != nil {
-		txn.ShortcutIntentID = pendingShortcutIntent.ID
+		txn.ShortcutIntentID = &pendingShortcutIntent.ID
 		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
 		if err != nil {
 			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
