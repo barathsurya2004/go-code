@@ -55,3 +55,9 @@ func GetCadenceStartAndEndTime(cadence core.Cadence, targetDate time.Time) (time
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid cadence: %s", cadence)
 	}
 }
+
+// NowUTC returns the current time in UTC location.
+func NowUTC() time.Time {
+	return time.Now().UTC()
+}
+

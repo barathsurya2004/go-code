@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
@@ -132,13 +131,14 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		user.UUID = userUUID
+		now := utils.NowUTC()
 		// create envelope group
 		envelopeGroup := core.EnvelopeGroup{
 			UserUUID:  userUUID,
 			Name:      core.DefaultName,
 			IsSystem:  true,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			CreatedAt: now,
+			UpdatedAt: now,
 		}
 		envGroupID, err := h.envelopeGroupRepo.CreateEnvelopeGroup(&envelopeGroup, tx)
 		if err != nil {
@@ -155,8 +155,8 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 			Name:            core.DefaultName,
 			Cadence:         "forever",
 			CountryISO:      "IN",
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
+			CreatedAt:       now,
+			UpdatedAt:       now,
 			IsSystem:        true,
 		}
 
@@ -168,15 +168,15 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// create default allocation
-		today := time.Now()
+		today := now
 		oneHundredYearFromNow := today.AddDate(100, 0, 0)
 		allocation := core.Allocation{
 			EnvelopeID:        envID,
 			AllocatedAmountE5: 0,
 			StartDate:         &today,
 			EndDate:           &oneHundredYearFromNow,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+			CreatedAt:         now,
+			UpdatedAt:         now,
 		}
 
 		if _, err := h.allocationRepo.CreateAllocation(&allocation, tx); err != nil {
@@ -187,7 +187,7 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// create token
-		lastUsedAt := time.Now()
+		lastUsedAt := now
 		token := core.Token{
 			UserUUID:   userUUID,
 			Prefix:     core.AuthToken,
@@ -195,8 +195,8 @@ func (h *AuthServiceHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 			Scope:      []string{"read", "write"},
 			ExpiresAt:  nil,
 			LastUsedAt: &lastUsedAt,
-			CreatedAt:  time.Now(),
-			UpdatedAt:  time.Now(),
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 
 		if authToken, err = h.tokenRepo.CreateToken(&token, tx); err != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 )
 
 type pgTransactionRowsRepo struct {
@@ -38,7 +39,9 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 		return uuid.Nil, errors.New("transaction type cannot be empty")
 	}
 	if txn.CreatedAt.IsZero() {
-		txn.CreatedAt = time.Now()
+		txn.CreatedAt = utils.NowUTC()
+	} else {
+		txn.CreatedAt = txn.CreatedAt.UTC()
 	}
 	var txnID uuid.UUID
 	var row *sql.Row

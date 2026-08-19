@@ -56,7 +56,7 @@ func TestPgShortcutIntentRepo_CreateShortcutIntent(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
 		mock.ExpectQuery("INSERT INTO shortcut_intent").
-			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, intent.CreatedAt, intent.TransactionID).
+			WithArgs(intent.UserID, intent.EnvelopeID, intent.Latitude, intent.Longitude, intent.Status, sqlmock.AnyArg(), intent.TransactionID).
 			WillReturnError(errors.New("db insert error"))
 
 		_, err := repo.CreateShortcutIntent(intent, tx)

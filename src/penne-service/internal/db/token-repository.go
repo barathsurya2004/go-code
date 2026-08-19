@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -165,7 +166,7 @@ func (r *pgTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) {
 		tokenObj.LastUsedAt = &lastUsedAt.Time
 	}
 
-	timeNow := time.Now()
+	timeNow := utils.NowUTC()
 	tokenObj.LastUsedAt = &timeNow
 	r.UpdateToken(tokenObj)
 

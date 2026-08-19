@@ -5,9 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"time"
-
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -87,7 +86,7 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	now := time.Now()
+	now := utils.NowUTC()
 
 	//create a new envGroup for this user with is_system = true (unallocated budget)
 

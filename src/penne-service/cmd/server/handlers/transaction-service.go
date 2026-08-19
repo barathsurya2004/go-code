@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -172,7 +173,9 @@ func (h *TransactionServiceHandler) DeleteTransaction(w http.ResponseWriter, r *
 
 func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transaction, userUUID uuid.UUID, Tx *sql.Tx) (*uuid.UUID, error) {
 	if txn.CreatedAt.IsZero() {
-		txn.CreatedAt = time.Now()
+		txn.CreatedAt = utils.NowUTC()
+	} else {
+		txn.CreatedAt = txn.CreatedAt.UTC()
 	}
 	TimeUpperbound := txn.CreatedAt.Add(3 * time.Minute)
 	TimeLowerbound := txn.CreatedAt.Add(-10 * time.Minute)

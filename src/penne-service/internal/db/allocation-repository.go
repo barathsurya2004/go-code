@@ -172,8 +172,8 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 		allocation := &core.Allocation{
 			EnvelopeID:        envelope.ID,
 			AllocatedAmountE5: envelope.TargetAmountE5,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+			CreatedAt:         utils.NowUTC(),
+			UpdatedAt:         utils.NowUTC(),
 			StartDate:         &startDate,
 			EndDate:           &endDate,
 		}

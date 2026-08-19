@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -451,7 +452,7 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 	}
 	defer tx.Rollback()
 
-	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, time.Now(), tx)
+	allocations, err := h.allocationRepo.GetActiveAllocationsByUserUUID(userUUID, utils.NowUTC(), tx)
 	if err != nil {
 		h.logger.Error("Failed to get active allocations", zap.String("user_uuid", userUUID.String()), zap.Error(err))
 		http.Error(w, "Failed to get active allocations", http.StatusInternalServerError)
@@ -528,12 +529,18 @@ func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter,
 		return
 	}
 
+	createdAt := utils.NowUTC()
+	if !req.CreatedAt.IsZero() {
+		createdAt = req.CreatedAt.UTC()
+	}
+
 	shortcutIntent := &core.ShortcutIntent{
 		UserID:     userUUID,
 		EnvelopeID: &envID,
 		Latitude:   req.Latitude,
 		Longitude:  req.Longitude,
 		Status:     core.StatusPending,
+		CreatedAt:  createdAt,
 	}
 
 	if shortcutIntent.ID, err = h.ShortcutIntentRepo.CreateShortcutIntent(shortcutIntent, sx); err != nil {

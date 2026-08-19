@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +35,9 @@ func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.Shortcu
 		return uuid.Nil, errors.New("shortcut intent status cannot be empty")
 	}
 	if shortcutIntent.CreatedAt.IsZero() {
-		shortcutIntent.CreatedAt = time.Now()
+		shortcutIntent.CreatedAt = utils.NowUTC()
+	} else {
+		shortcutIntent.CreatedAt = shortcutIntent.CreatedAt.UTC()
 	}
 	var shortcutIntentID uuid.UUID
 	var row *sql.Row

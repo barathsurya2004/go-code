@@ -255,3 +255,13 @@ func TestGetCadenceStartAndEndTime_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestNowUTC(t *testing.T) {
+	now := NowUTC()
+	if now.Location() != time.UTC {
+		t.Errorf("expected location UTC, got %v", now.Location())
+	}
+	if now.IsZero() {
+		t.Errorf("expected non-zero time")
+	}
+}
