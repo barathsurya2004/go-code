@@ -78,7 +78,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 	defer db.Close()
 
 	shortcutIntentRepo := &mockShortcutIntentRepo{}
-	handler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db)
+	handler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
 	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("CreateTransaction - Invalid Payload", func(t *testing.T) {
@@ -384,7 +384,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
 
 		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
@@ -411,7 +411,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
 
 		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
@@ -448,7 +448,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
 
 		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
@@ -479,7 +479,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
 
 		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))

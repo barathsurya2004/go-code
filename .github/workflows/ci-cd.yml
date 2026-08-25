@@ -75,3 +75,4 @@ jobs:
           port: 22
           script: |
             ~/deploy.sh penne-service
+            ~/deploy.sh cadence-penne-service

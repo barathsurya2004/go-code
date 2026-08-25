@@ -1,33 +1,27 @@
 package main
 
 import (
+	"database/sql"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
+	"github.com/barathsurya2004/go-code/penne-service/internal/db"
+	"github.com/barathsurya2004/go-code/pkg"
+	"go.uber.org/fx"
 )
 
-func TestCreateDispatcherAndServiceClient(t *testing.T) {
-	cfg := &cadence.CadenceConfig{
-		Domain:         cadence.Domain,
-		ServiceName:    cadence.WorkerServiceName,
-		CadenceService: cadence.CadenceService,
-		HostPort:       cadence.CadenceHostPort,
-	}
-
-	dispatcher, err := createDispatcher(cfg)
-	if err != nil {
-		t.Fatalf("expected no error creating dispatcher, got %v", err)
-	}
-	if dispatcher == nil {
-		t.Fatal("expected non-nil dispatcher")
-	}
-
-	svcClient := initServiceClient(dispatcher, cfg)
-	if svcClient == nil {
-		t.Fatal("expected non-nil serviceClient")
-	}
-
-	if err := dispatcher.Stop(); err != nil {
-		t.Errorf("expected clean dispatcher stop, got %v", err)
+func TestCadenceAppModule(t *testing.T) {
+	app := fx.New(
+		pkg.Module,
+		db.Module,
+		cadence.Module,
+		fx.Replace(func() (*sql.DB, error) {
+			dbMock, _, err := sqlmock.New()
+			return dbMock, err
+		}),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("expected no error initializing cadence app modules, got %v", err)
 	}
 }

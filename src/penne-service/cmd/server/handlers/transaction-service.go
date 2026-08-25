@@ -3,28 +3,35 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
+	"go.uber.org/cadence/client"
 	"go.uber.org/zap"
 )
 
 type TransactionServiceHandler struct {
 	transactionRepo    core.TransactionRepository
 	shortcutIntentRepo core.ShortcutIntentRepository
+	repos              core.RepoContainer
 	logger             *zap.Logger
 	db                 *sql.DB
+	cadenceClient      client.Client
 }
 
-func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, shortcutIntentRepo core.ShortcutIntentRepository, logger *zap.Logger, db *sql.DB) *TransactionServiceHandler {
+func NewTransactionServiceHandler(transactionRepo core.TransactionRepository, shortcutIntentRepo core.ShortcutIntentRepository, logger *zap.Logger, db *sql.DB, cc client.Client, repos core.RepoContainer) *TransactionServiceHandler {
 	return &TransactionServiceHandler{
 		transactionRepo:    transactionRepo,
 		shortcutIntentRepo: shortcutIntentRepo,
 		logger:             logger,
 		db:                 db,
+		cadenceClient:      cc,
+		repos:              repos,
 	}
 }
 
@@ -51,6 +58,36 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 		return
 	}
 	defer tx.Rollback()
+
+	if h.cadenceClient != nil {
+		wfOptions := client.StartWorkflowOptions{
+			ID:                           uuid.NewString(),
+			TaskList:                     cadence.TaskListName,
+			ExecutionStartToCloseTimeout: 5 * time.Minute,
+		}
+		workflowRun, err := h.cadenceClient.ExecuteWorkflow(
+			r.Context(),
+			wfOptions,
+			"CreateTransactionWorkflow",
+			txn,
+			tx,
+		)
+
+		if err != nil {
+			h.logger.Error("Failed to start cadence workflow", zap.Error(err))
+		} else if workflowRun != nil {
+			var resultUUID *uuid.UUID
+			if err := workflowRun.Get(r.Context(), &resultUUID); err != nil {
+				h.logger.Error("workflow Excecution failed", zap.Error(err))
+			}
+
+			if resultUUID != nil {
+				fmt.Println(*resultUUID)
+			} else {
+				fmt.Println("workflow completed with nor result")
+			}
+		}
+	}
 
 	txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, tx)
 	if err != nil {

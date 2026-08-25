@@ -149,3 +149,13 @@ type ShortcutIntentRepository interface {
 	DeleteShortcutIntent(id uuid.UUID) error
 	GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*ShortcutIntent, error)
 }
+
+type RepoContainer struct {
+	Transaction    TransactionRepository
+	User           UserRepository
+	Token          TokenRepository
+	EnvelopeGroup  EnvelopeGroupRepository
+	Envelope       EnvelopeRepository
+	Allocation     AllocationRepository
+	ShortcutIntent ShortcutIntentRepository
+}

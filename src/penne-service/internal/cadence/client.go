@@ -13,12 +13,12 @@ import (
 
 // Cadence system constants matching system configuration
 const (
-	Domain            = "penne-service"
+	Domain            = "penne-service-lifecycle-workers"
 	CadenceService    = "cadence-frontend"
 	CadenceHostPort   = "localhost:7933"
 	ClientServiceName = "penne-service-client"
-	WorkerServiceName = "penne-service-worker"
-	TaskListName      = "onboarding-task-list"
+	WorkerServiceName = "penne-service"
+	TaskListName      = "penne-service-tasklist"
 )
 
 // CadenceConfig holds configuration for the Cadence client connection.

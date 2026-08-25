@@ -6,6 +6,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"go.uber.org/cadence/client"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -26,6 +27,8 @@ func TestModule(t *testing.T) {
 			func() core.EnvelopeRepository { return &mockEnvelopeRepo{} },
 			func() core.AllocationRepository { return &mockAllocationRepo{} },
 			func() core.ShortcutIntentRepository { return &mockShortcutIntentRepo{} },
+			func() client.Client { return nil },
+			func() core.RepoContainer { return core.RepoContainer{} },
 			func() *sql.DB {
 				db, _, _ := sqlmock.New()
 				return db

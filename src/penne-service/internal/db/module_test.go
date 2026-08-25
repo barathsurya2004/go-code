@@ -29,3 +29,10 @@ func TestModule(t *testing.T) {
 	}
 	_ = app
 }
+
+func TestNewRepoContainer(t *testing.T) {
+	container := NewRepoContainer(nil, nil, nil, nil, nil, nil, nil)
+	if container.Transaction != nil {
+		t.Error("expected nil Transaction")
+	}
+}
