@@ -1,6 +1,7 @@
 package cadence
 
 import (
+	"context"
 	"testing"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -12,7 +13,7 @@ import (
 
 func TestRegisterWorkflowsAndActivities(t *testing.T) {
 	RegisterWorkflows()
-	RegisterActivities(core.RepoContainer{})
+	RegisterActivities(core.RepoContainer{}, zap.NewNop())
 }
 
 func TestStartWorker_NilClientError(t *testing.T) {
@@ -51,4 +52,8 @@ func TestStartWorker_WithServiceClient(t *testing.T) {
 	if w == nil {
 		t.Fatal("expected non-nil worker")
 	}
+
+	ctx := context.Background()
+	_ = lc.Start(ctx)
+	_ = lc.Stop(ctx)
 }

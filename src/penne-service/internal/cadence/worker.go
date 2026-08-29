@@ -20,11 +20,13 @@ var registerWorkflowOnce sync.Once
 var registerActivitiesOnce sync.Once
 
 // RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
-func RegisterActivities(repos core.RepoContainer) {
-	transactionAct := activities.NewTransactionActivities(repos)
+func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
+	transactionAct := activities.NewTransactionActivities(repos, logger)
 	registerActivitiesOnce.Do(func() {
 		activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
-		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransaction"})
+		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
+		activity.RegisterWithOptions(transactionAct.UpdateShortcutIntentActivity, activity.RegisterOptions{Name: "UpdateShortcutIntentActivity"})
+		activity.RegisterWithOptions(transactionAct.PendingShortcutIntentActivity, activity.RegisterOptions{Name: "PendingShortcutIntentActivity"})
 	})
 }
 
@@ -43,7 +45,7 @@ func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConf
 	}
 
 	RegisterWorkflows()
-	RegisterActivities(repos)
+	RegisterActivities(repos, logger)
 
 	workerOptions := worker.Options{
 		Logger: logger,

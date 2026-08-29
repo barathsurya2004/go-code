@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,8 +13,35 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
+	"go.uber.org/cadence/client"
 	"go.uber.org/zap"
 )
+
+type mockWorkflowRun struct {
+	client.WorkflowRun
+	getFn func(ctx context.Context, valuePtr interface{}) error
+}
+
+func (m *mockWorkflowRun) Get(ctx context.Context, valuePtr interface{}) error {
+	if m.getFn != nil {
+		return m.getFn(ctx, valuePtr)
+	}
+	return nil
+}
+func (m *mockWorkflowRun) GetID() string    { return "test-id" }
+func (m *mockWorkflowRun) GetRunID() string { return "test-run-id" }
+
+type mockCadenceClient struct {
+	client.Client
+	executeWorkflowFn func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error)
+}
+
+func (m *mockCadenceClient) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+	if m.executeWorkflowFn != nil {
+		return m.executeWorkflowFn(ctx, options, workflow, args...)
+	}
+	return &mockWorkflowRun{}, nil
+}
 
 type mockTxnRepo struct {
 	createTransactionFn         func(txn *core.Transaction) (uuid.UUID, error)
@@ -71,7 +97,7 @@ func (m *mockTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time
 func TestTransactionServiceHandler(t *testing.T) {
 	logger := zap.NewNop()
 	repo := &mockTxnRepo{}
-	db, mock, err := sqlmock.New()
+	db, _, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
@@ -104,64 +130,81 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CreateTransaction - BeginTx Error", func(t *testing.T) {
-		mock.ExpectBegin().WillReturnError(errors.New("begin tx failed"))
+	t.Run("CreateTransaction - Success without Cadence Client", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.CreateTransaction(rr, req)
 
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
 		}
 	})
 
-	t.Run("CreateTransaction - Repo Error", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectRollback()
-		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
-			return uuid.Nil, errors.New("db error")
+	t.Run("CreateTransaction - Success with Cadence Client", func(t *testing.T) {
+		expectedUUID := uuid.New()
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						if ptr, ok := valuePtr.(**uuid.UUID); ok {
+							*ptr = &expectedUUID
+						}
+						return nil
+					},
+				}, nil
+			},
 		}
+
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
-		handler.CreateTransaction(rr, req)
+		cadenceHandler.CreateTransaction(rr, req)
 
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
 		}
 	})
 
-	t.Run("CreateTransaction - Commit Error", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
-		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
-			return uuid.New(), nil
+	t.Run("CreateTransaction - ExecuteWorkflow Error", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return nil, errors.New("execute workflow error")
+			},
 		}
+
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
-		handler.CreateTransaction(rr, req)
+		cadenceHandler.CreateTransaction(rr, req)
 
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
 		}
 	})
 
-	t.Run("CreateTransaction - Success", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectCommit()
-		repo.createTransactionFn = func(txn *core.Transaction) (uuid.UUID, error) {
-			return uuid.New(), nil
+	t.Run("CreateTransaction - WorkflowRun Get Error", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return errors.New("workflow get error")
+					},
+				}, nil
+			},
 		}
+
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
 		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
-		handler.CreateTransaction(rr, req)
+		cadenceHandler.CreateTransaction(rr, req)
 
 		if rr.Code != http.StatusCreated {
 			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
@@ -361,12 +404,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CreateTransaction - Success with Pending Shortcut Intent", func(t *testing.T) {
-		dbMock, mock, _ := sqlmock.New()
-		defer dbMock.Close()
-		mock.ExpectBegin()
-		mock.ExpectCommit()
-
+	t.Run("CreateTransactionWorkflow - Success with Pending Shortcut Intent", func(t *testing.T) {
 		txnID := uuid.New()
 		intentID := uuid.New()
 
@@ -384,26 +422,14 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
-
-		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
-		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
-		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
-		rr := httptest.NewRecorder()
-
-		h.CreateTransaction(rr, req)
-
-		if rr.Code != http.StatusCreated {
-			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		res, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err != nil || res == nil || *res != txnID {
+			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
 		}
 	})
 
-	t.Run("CreateTransaction - Error Fetching Pending Shortcut Intent", func(t *testing.T) {
-		dbMock, mock, _ := sqlmock.New()
-		defer dbMock.Close()
-		mock.ExpectBegin()
-		mock.ExpectRollback()
-
+	t.Run("CreateTransactionWorkflow - Error Fetching Pending Shortcut Intent", func(t *testing.T) {
 		localTxnRepo := &mockTxnRepo{}
 		localShortcutRepo := &mockShortcutIntentRepo{
 			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
@@ -411,26 +437,14 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
-
-		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
-		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
-		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
-		rr := httptest.NewRecorder()
-
-		h.CreateTransaction(rr, req)
-
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		_, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
 		}
 	})
 
-	t.Run("CreateTransaction - Error Updating Shortcut Intent", func(t *testing.T) {
-		dbMock, mock, _ := sqlmock.New()
-		defer dbMock.Close()
-		mock.ExpectBegin()
-		mock.ExpectRollback()
-
+	t.Run("CreateTransactionWorkflow - Error Updating Shortcut Intent", func(t *testing.T) {
 		txnID := uuid.New()
 		intentID := uuid.New()
 
@@ -448,26 +462,14 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
-
-		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
-		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
-		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
-		rr := httptest.NewRecorder()
-
-		h.CreateTransaction(rr, req)
-
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		_, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
 		}
 	})
 
-	t.Run("CreateTransaction - Error Creating Transaction when Pending Shortcut Exists", func(t *testing.T) {
-		dbMock, mock, _ := sqlmock.New()
-		defer dbMock.Close()
-		mock.ExpectBegin()
-		mock.ExpectRollback()
-
+	t.Run("CreateTransactionWorkflow - Error Creating Transaction when Pending Shortcut Exists", func(t *testing.T) {
 		localShortcutRepo := &mockShortcutIntentRepo{
 			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
 				return &core.ShortcutIntent{ID: uuid.New(), Status: core.StatusPending}, nil
@@ -479,17 +481,30 @@ func TestTransactionServiceHandler(t *testing.T) {
 			},
 		}
 
-		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, dbMock, nil, core.RepoContainer{})
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		_, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+	})
 
-		body, _ := json.Marshal(map[string]interface{}{"amount_e5": 1000, "country_iso2": "US", "payment_method": "Card", "txn_type": "debit"})
-		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(body))
-		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
-		rr := httptest.NewRecorder()
+	t.Run("CreateTransactionWorkflow - Success without Pending Shortcut Intent", func(t *testing.T) {
+		txnID := uuid.New()
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
 
-		h.CreateTransaction(rr, req)
-
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		res, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err != nil || res == nil || *res != txnID {
+			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
 		}
 	})
 }

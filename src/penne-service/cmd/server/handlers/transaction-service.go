@@ -51,14 +51,15 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 
 	txn.UserID = userUUID
 
-	tx, err := h.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
-		h.logger.Error("Failed to begin transaction", zap.Error(err))
-		return
-	}
-	defer tx.Rollback()
+	// tx, err := h.db.BeginTx(r.Context(), nil)
+	// if err != nil {
+	// 	http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+	// 	h.logger.Error("Failed to begin transaction", zap.Error(err))
+	// 	return
+	// }
+	// defer tx.Rollback()
 
+	var resultUUID *uuid.UUID
 	if h.cadenceClient != nil {
 		wfOptions := client.StartWorkflowOptions{
 			ID:                           uuid.NewString(),
@@ -70,13 +71,11 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 			wfOptions,
 			"CreateTransactionWorkflow",
 			txn,
-			tx,
 		)
 
 		if err != nil {
 			h.logger.Error("Failed to start cadence workflow", zap.Error(err))
 		} else if workflowRun != nil {
-			var resultUUID *uuid.UUID
 			if err := workflowRun.Get(r.Context(), &resultUUID); err != nil {
 				h.logger.Error("workflow Excecution failed", zap.Error(err))
 			}
@@ -89,24 +88,29 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 		}
 	}
 
-	txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, tx)
-	if err != nil {
-		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
-		h.logger.Error("Failed to create transaction", zap.Error(err))
-		return
-	}
+	// txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, tx)
+	// if err != nil {
+	// 	http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+	// 	h.logger.Error("Failed to create transaction", zap.Error(err))
+	// 	return
+	// }
 
-	if err := tx.Commit(); err != nil {
-		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
-		h.logger.Error("Failed to commit transaction", zap.Error(err))
-		return
+	// if err := tx.Commit(); err != nil {
+	// 	http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+	// 	h.logger.Error("Failed to commit transaction", zap.Error(err))
+	// 	return
+	// }
+
+	var respUUID uuid.UUID
+	if resultUUID != nil {
+		respUUID = *resultUUID
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(struct {
 		TxnUUID uuid.UUID `json:"txn_uuid"`
 	}{
-		TxnUUID: *txnID,
+		TxnUUID: respUUID,
 	})
 }
 
