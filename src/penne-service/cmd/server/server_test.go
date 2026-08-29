@@ -67,6 +67,9 @@ func (d *dummyTxnRepo) DeleteTransaction(id uuid.UUID) error                    
 func (d *dummyTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
 	return nil, nil
 }
+func (d *dummyTxnRepo) GetDashboardSummary(uuid uuid.UUID) (*core.DashboardSummary, error) {
+	return &core.DashboardSummary{}, nil
+}
 
 type dummyShortcutIntentRepo struct{}
 

@@ -238,3 +238,34 @@ func (r *pgTransactionRowsRepo) GetTransactionByTime(time_lowerbound, time_upper
 	}
 	return txn, nil
 }
+
+func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) {
+	query := `
+		SELECT 
+			SUM(CASE WHEN txn_type = 'credit' THEN amount_e5 ELSE 0 END) as total_income_e5,
+			SUM(CASE WHEN txn_type = 'debit' THEN amount_e5 ELSE 0 END) as total_expense_e5,
+			SUM(CASE WHEN payment_method = 'bank_card' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END) as card_spent_e5,
+			SUM(CASE WHEN payment_method = 'bank_account' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END) as bank_spent_e5
+		FROM transactionrows
+		WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
+	`
+	// validation checks
+	if userUUID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	timeStart, timeEnd, err := utils.GetCadenceStartAndEndTime("monthly", utils.NowUTC())
+	if err != nil {
+		return nil, err
+	}
+	dashboardSummary := &core.DashboardSummary{}
+	err = r.db.QueryRowContext(context.Background(), query, userUUID, timeStart, timeEnd).Scan(
+		&dashboardSummary.TotalIncomeE5,
+		&dashboardSummary.TotalExpenseE5,
+		&dashboardSummary.CardSpentE5,
+		&dashboardSummary.BankSpentE5,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return dashboardSummary, nil
+}

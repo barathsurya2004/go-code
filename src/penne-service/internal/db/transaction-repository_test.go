@@ -410,3 +410,50 @@ func TestPgTransactionRowsRepo_GetTransactionByTime(t *testing.T) {
 		}
 	})
 }
+
+func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgTransactionRowsRepo(db)
+
+	t.Run("Empty User UUID", func(t *testing.T) {
+		_, err := repo.GetDashboardSummary(uuid.Nil)
+		if err == nil || err.Error() != "user UUID is required" {
+			t.Errorf("expected user UUID is required error, got %v", err)
+		}
+	})
+
+	t.Run("Query Error", func(t *testing.T) {
+		userUUID := uuid.New()
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("query error"))
+
+		_, err := repo.GetDashboardSummary(userUUID)
+		if err == nil {
+			t.Errorf("expected query error, got nil")
+		}
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		userUUID := uuid.New()
+		rows := sqlmock.NewRows([]string{"total_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5"}).
+			AddRow(10000, 4000, 3000, 1000)
+
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(rows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if summary == nil || summary.TotalIncomeE5 != 10000 || summary.TotalExpenseE5 != 4000 || summary.CardSpentE5 != 3000 || summary.BankSpentE5 != 1000 {
+			t.Errorf("unexpected summary result: %+v", summary)
+		}
+	})
+}

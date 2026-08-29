@@ -35,6 +35,7 @@ type TransactionRepository interface {
 	GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*Transaction, error)
 	UpdateTransaction(txn *Transaction, Tx *sql.Tx) error
 	DeleteTransaction(uuid uuid.UUID) error
+	GetDashboardSummary(uuid uuid.UUID) (*DashboardSummary, error)
 }
 
 type User struct {
@@ -158,4 +159,14 @@ type RepoContainer struct {
 	Envelope       EnvelopeRepository
 	Allocation     AllocationRepository
 	ShortcutIntent ShortcutIntentRepository
+}
+
+type DashboardSummary struct {
+	TotalIncomeE5    int64 `json:"total_income_e5"`
+	TotalExpenseE5   int64 `json:"total_expense_e5"`
+	TotalRemainingE5 int64 `json:"total_remaining_e5"`
+	CardSpentE5      int64 `json:"card_spent_e5"`
+	CardLimitE5      int64 `json:"card_limit_e5"`
+	BankSpentE5      int64 `json:"bank_spent_e5"`
+	BankLimitE5      int64 `json:"bank_limit_e5"`
 }

@@ -50,6 +50,7 @@ type mockTxnRepo struct {
 	updateTransactionFn         func(txn *core.Transaction) error
 	deleteTransactionFn         func(id uuid.UUID) error
 	getTransactionByTimeFn      func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
+	getDashboardSummaryFn       func(uuid uuid.UUID) (*core.DashboardSummary, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -92,6 +93,13 @@ func (m *mockTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time
 		return m.getTransactionByTimeFn(time_lowerbound, time_upperbound, Tx)
 	}
 	return nil, nil
+}
+
+func (m *mockTxnRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) {
+	if m.getDashboardSummaryFn != nil {
+		return m.getDashboardSummaryFn(userUUID)
+	}
+	return &core.DashboardSummary{}, nil
 }
 
 func TestTransactionServiceHandler(t *testing.T) {
@@ -505,6 +513,62 @@ func TestTransactionServiceHandler(t *testing.T) {
 		res, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
 		if err != nil || res == nil || *res != txnID {
 			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
+		}
+	})
+
+	t.Run("DashboardSummaryHandler - Missing User UUID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/dashboard-summary", nil)
+		rr := httptest.NewRecorder()
+
+		handler.DashboardSummaryHandler(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("DashboardSummaryHandler - Invalid User UUID Query", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/dashboard-summary?user_uuid=invalid", nil)
+		rr := httptest.NewRecorder()
+
+		handler.DashboardSummaryHandler(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("DashboardSummaryHandler - Repo Error", func(t *testing.T) {
+		localTxnRepo := &mockTxnRepo{
+			getDashboardSummaryFn: func(userUUID uuid.UUID) (*core.DashboardSummary, error) {
+				return nil, errors.New("db error")
+			},
+		}
+		h := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("GET", "/api/dashboard-summary?user_uuid="+validUUID.String(), nil)
+		rr := httptest.NewRecorder()
+
+		h.DashboardSummaryHandler(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("DashboardSummaryHandler - Success", func(t *testing.T) {
+		localTxnRepo := &mockTxnRepo{
+			getDashboardSummaryFn: func(userUUID uuid.UUID) (*core.DashboardSummary, error) {
+				return &core.DashboardSummary{TotalIncomeE5: 5000}, nil
+			},
+		}
+		h := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("GET", "/api/dashboard-summary?user_uuid="+validUUID.String(), nil)
+		rr := httptest.NewRecorder()
+
+		h.DashboardSummaryHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
 }

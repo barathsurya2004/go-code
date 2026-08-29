@@ -253,3 +253,26 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 	}
 
 }
+
+func (h *TransactionServiceHandler) DashboardSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		userUUIDStr := r.URL.Query().Get("user_uuid")
+		var err error
+		userUUID, err = uuid.Parse(userUUIDStr)
+		if err != nil || userUUID == uuid.Nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			h.logger.Error("Invalid request payload")
+			return
+		}
+	}
+	DashboardSummary, err := h.transactionRepo.GetDashboardSummary(userUUID)
+	if err != nil {
+		http.Error(w, "Failed to fetch dashboard summary", http.StatusInternalServerError)
+		h.logger.Error("Failed to fetch dashboard summary", zap.String("user_uuid", userUUID.String()), zap.Error(err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(DashboardSummary)
+
+}
