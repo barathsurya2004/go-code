@@ -457,3 +457,81 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 		}
 	})
 }
+
+func TestPgTransactionRowsRepo_GetTransactionByUserUUIDPaginated(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgTransactionRowsRepo(db)
+	now := time.Now()
+
+	t.Run("Empty User UUID", func(t *testing.T) {
+		_, err := repo.GetTransactionByUserUUIDPaginated(uuid.Nil, time.Time{}, uuid.Nil, 10)
+		if err == nil || err.Error() != "user UUID is required" {
+			t.Errorf("expected user UUID is required error, got %v", err)
+		}
+	})
+
+	t.Run("Invalid Limit", func(t *testing.T) {
+		_, err := repo.GetTransactionByUserUUIDPaginated(uuid.New(), time.Time{}, uuid.Nil, 0)
+		if err == nil || err.Error() != "limit must be positive" {
+			t.Errorf("expected limit must be positive error, got %v", err)
+		}
+	})
+
+	t.Run("First Page (Nil Cursor)", func(t *testing.T) {
+		userUUID := uuid.New()
+		txnID := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
+			AddRow(txnID, userUUID, nil, 1000, "US", "Card", "debit", now)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at FROM transactionrows").
+			WithArgs(userUUID, nil, nil, 10).
+			WillReturnRows(rows)
+
+		txns, err := repo.GetTransactionByUserUUIDPaginated(userUUID, time.Time{}, uuid.Nil, 10)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if len(txns) != 1 || txns[0].ID != txnID {
+			t.Errorf("expected 1 transaction with ID %v, got %v", txnID, txns)
+		}
+	})
+
+	t.Run("Subsequent Page (With Cursor)", func(t *testing.T) {
+		userUUID := uuid.New()
+		lastTxnID := uuid.New()
+		lastTime := now.Add(-time.Hour)
+		newTxnID := uuid.New()
+
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at"}).
+			AddRow(newTxnID, userUUID, nil, 2000, "US", "Card", "debit", lastTime)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at FROM transactionrows").
+			WithArgs(userUUID, lastTime, lastTxnID, 10).
+			WillReturnRows(rows)
+
+		txns, err := repo.GetTransactionByUserUUIDPaginated(userUUID, lastTime, lastTxnID, 10)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if len(txns) != 1 || txns[0].ID != newTxnID {
+			t.Errorf("expected 1 transaction with ID %v, got %v", newTxnID, txns)
+		}
+	})
+
+	t.Run("Query Error", func(t *testing.T) {
+		userUUID := uuid.New()
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at FROM transactionrows").
+			WithArgs(userUUID, nil, nil, 10).
+			WillReturnError(errors.New("db error"))
+
+		_, err := repo.GetTransactionByUserUUIDPaginated(userUUID, time.Time{}, uuid.Nil, 10)
+		if err == nil {
+			t.Errorf("expected query error, got nil")
+		}
+	})
+}

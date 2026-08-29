@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
@@ -147,7 +148,32 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 		}
 	}
 
-	txs, err := h.transactionRepo.GetTransactionsByUserUUID(userUUID)
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	var lastTransactionCreatedAt time.Time
+	lastTransactionCreatedAtStr := r.URL.Query().Get("lastTransactionCreatedAt")
+	if lastTransactionCreatedAtStr != "" {
+		var err error
+		lastTransactionCreatedAt, err = time.Parse(time.RFC3339, lastTransactionCreatedAtStr)
+		if err != nil {
+			lastTransactionCreatedAt, _ = time.Parse("2006-01-02T15:04:05Z07:00", lastTransactionCreatedAtStr)
+		}
+	}
+
+	var lastTransactionID uuid.UUID
+	lastTransactionIDStr := r.URL.Query().Get("lastTransactionID")
+	if lastTransactionIDStr != "" {
+		lastTransactionID, _ = uuid.Parse(lastTransactionIDStr)
+	}
+
+	txs, err := h.transactionRepo.GetTransactionByUserUUIDPaginated(userUUID, lastTransactionCreatedAt, lastTransactionID, limit)
 	if err != nil {
 		http.Error(w, "Failed to retrieve transactions", http.StatusInternalServerError)
 		h.logger.Error("Failed to retrieve transactions", zap.String("user_uuid", userUUID.String()), zap.Error(err))

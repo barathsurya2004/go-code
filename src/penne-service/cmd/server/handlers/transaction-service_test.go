@@ -50,7 +50,8 @@ type mockTxnRepo struct {
 	updateTransactionFn         func(txn *core.Transaction) error
 	deleteTransactionFn         func(id uuid.UUID) error
 	getTransactionByTimeFn      func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
-	getDashboardSummaryFn       func(uuid uuid.UUID) (*core.DashboardSummary, error)
+	getDashboardSummaryFn               func(uuid uuid.UUID) (*core.DashboardSummary, error)
+	getTransactionByUserUUIDPaginatedFn func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -100,6 +101,13 @@ func (m *mockTxnRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSu
 		return m.getDashboardSummaryFn(userUUID)
 	}
 	return &core.DashboardSummary{}, nil
+}
+
+func (m *mockTxnRepo) GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
+	if m.getTransactionByUserUUIDPaginatedFn != nil {
+		return m.getTransactionByUserUUIDPaginatedFn(userUUID, lastTransactionCreatedAt, lastTransactionID, limit)
+	}
+	return nil, nil
 }
 
 func TestTransactionServiceHandler(t *testing.T) {
@@ -270,7 +278,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionsByUserUUID - Repo Error", func(t *testing.T) {
-		repo.getTransactionsByUserUUIDFn = func(userUUID uuid.UUID) ([]*core.Transaction, error) {
+		repo.getTransactionByUserUUIDPaginatedFn = func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
 			return nil, errors.New("db error")
 		}
 		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)
@@ -284,7 +292,7 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("GetTransactionsByUserUUID - Success", func(t *testing.T) {
-		repo.getTransactionsByUserUUIDFn = func(userUUID uuid.UUID) ([]*core.Transaction, error) {
+		repo.getTransactionByUserUUIDPaginatedFn = func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
 			return []*core.Transaction{{ID: uuid.New(), UserID: userUUID}}, nil
 		}
 		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)

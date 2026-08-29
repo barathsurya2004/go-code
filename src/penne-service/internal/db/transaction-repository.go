@@ -146,6 +146,63 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*
 	return transactions, nil
 }
 
+func (r *pgTransactionRowsRepo) GetTransactionByUserUUIDPaginated(userID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
+	if userID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	if limit <= 0 {
+		return nil, errors.New("limit must be positive")
+	}
+
+	query := `
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
+		FROM transactionrows
+		WHERE user_id = $1
+		  AND ($2::timestamptz IS NULL OR $3::uuid IS NULL OR (created_at, id) < ($2, $3))
+		ORDER BY created_at DESC, id DESC
+		LIMIT $4;
+	`
+
+	var createdAtArg interface{} = lastTransactionCreatedAt
+	if lastTransactionCreatedAt.IsZero() {
+		createdAtArg = nil
+	}
+
+	var idArg interface{} = lastTransactionID
+	if lastTransactionID == uuid.Nil {
+		idArg = nil
+	}
+
+	rows, err := r.db.QueryContext(context.Background(), query, userID, createdAtArg, idArg, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var transactions []*core.Transaction
+	for rows.Next() {
+		txn := &core.Transaction{}
+		if err := rows.Scan(
+			&txn.ID,
+			&txn.UserID,
+			&txn.EnvelopeID,
+			&txn.AmountE5,
+			&txn.CountryISO,
+			&txn.PaymentMethod,
+			&txn.Type,
+			&txn.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, txn)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return transactions, nil
+}
+
 func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction, Tx *sql.Tx) error {
 	query := `
 		UPDATE transactionrows

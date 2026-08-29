@@ -36,6 +36,7 @@ type TransactionRepository interface {
 	UpdateTransaction(txn *Transaction, Tx *sql.Tx) error
 	DeleteTransaction(uuid uuid.UUID) error
 	GetDashboardSummary(uuid uuid.UUID) (*DashboardSummary, error)
+	GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*Transaction, error)
 }
 
 type User struct {

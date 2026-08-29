@@ -70,6 +70,9 @@ func (d *dummyTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound tim
 func (d *dummyTxnRepo) GetDashboardSummary(uuid uuid.UUID) (*core.DashboardSummary, error) {
 	return &core.DashboardSummary{}, nil
 }
+func (d *dummyTxnRepo) GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
+	return nil, nil
+}
 
 type dummyShortcutIntentRepo struct{}
 
