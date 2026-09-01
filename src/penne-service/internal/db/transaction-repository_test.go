@@ -439,6 +439,39 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 		}
 	})
 
+	t.Run("ErrNoRows", func(t *testing.T) {
+		userUUID := uuid.New()
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(sql.ErrNoRows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error on ErrNoRows, got %v", err)
+		}
+		if summary == nil || summary.TotalIncomeE5 != 0 || summary.TotalExpenseE5 != 0 {
+			t.Errorf("expected empty summary, got %+v", summary)
+		}
+	})
+
+	t.Run("Zero Values (No Transactions Found via COALESCE)", func(t *testing.T) {
+		userUUID := uuid.New()
+		rows := sqlmock.NewRows([]string{"total_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5"}).
+			AddRow(0, 0, 0, 0)
+
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(rows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if summary == nil || summary.TotalIncomeE5 != 0 || summary.TotalExpenseE5 != 0 || summary.CardSpentE5 != 0 || summary.BankSpentE5 != 0 {
+			t.Errorf("unexpected summary result: %+v", summary)
+		}
+	})
+
 	t.Run("Success", func(t *testing.T) {
 		userUUID := uuid.New()
 		rows := sqlmock.NewRows([]string{"total_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5"}).

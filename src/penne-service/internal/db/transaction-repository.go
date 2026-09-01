@@ -299,12 +299,13 @@ func (r *pgTransactionRowsRepo) GetTransactionByTime(time_lowerbound, time_upper
 func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) {
 	query := `
 		SELECT 
-			SUM(CASE WHEN txn_type = 'credit' THEN amount_e5 ELSE 0 END) as total_income_e5,
-			SUM(CASE WHEN txn_type = 'debit' THEN amount_e5 ELSE 0 END) as total_expense_e5,
-			SUM(CASE WHEN payment_method = 'bank_card' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END) as card_spent_e5,
-			SUM(CASE WHEN payment_method = 'bank_account' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END) as bank_spent_e5
-		FROM transactionrows
-		WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
+    COALESCE(SUM(CASE WHEN txn_type = 'credit' THEN amount_e5 ELSE 0 END), 0) as total_income_e5,
+    COALESCE(SUM(CASE WHEN txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as total_expense_e5,
+    COALESCE(SUM(CASE WHEN payment_method = 'bank_card' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as card_spent_e5,
+    COALESCE(SUM(CASE WHEN payment_method = 'bank_account' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as bank_spent_e5
+FROM transactionrows
+WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
+
 	`
 	// validation checks
 	if userUUID == uuid.Nil {
@@ -322,6 +323,9 @@ func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.D
 		&dashboardSummary.BankSpentE5,
 	)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return dashboardSummary, nil
+		}
 		return nil, err
 	}
 	return dashboardSummary, nil
