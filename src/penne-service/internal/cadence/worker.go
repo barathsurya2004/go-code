@@ -27,12 +27,16 @@ func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
 		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
 		activity.RegisterWithOptions(transactionAct.UpdateShortcutIntentActivity, activity.RegisterOptions{Name: "UpdateShortcutIntentActivity"})
 		activity.RegisterWithOptions(transactionAct.PendingShortcutIntentActivity, activity.RegisterOptions{Name: "PendingShortcutIntentActivity"})
+		activity.RegisterWithOptions(transactionAct.CreateShortcutIntent, activity.RegisterOptions{Name: "CreateShortcutIntentActivity"})
+		activity.RegisterWithOptions(transactionAct.GetTransactionByTimeActivity, activity.RegisterOptions{Name: "GetTransactionByTimeActivity"})
+		activity.RegisterWithOptions(transactionAct.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
 	})
 }
 
 func RegisterWorkflows() {
 	registerWorkflowOnce.Do(func() {
 		workflow.RegisterWithOptions(workflows.CreateTransactionWorkflow, workflow.RegisterOptions{Name: "CreateTransactionWorkflow"})
+		workflow.RegisterWithOptions(workflows.CreateShortcutIntentWorkflow, workflow.RegisterOptions{Name: "CreateShortcutIntentWorkflow"})
 		workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
 	})
 

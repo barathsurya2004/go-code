@@ -84,12 +84,15 @@ func (s *UnitTestSuite) Test_CreateTransactionWorkflow_UpdateIntentError() {
 
 	acts := activities.NewTransactionActivities(core.RepoContainer{}, logger)
 	env.RegisterActivityWithOptions(acts.PendingShortcutIntentActivity, activity.RegisterOptions{Name: "PendingShortcutIntentActivity"})
+	env.RegisterActivityWithOptions(acts.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
 	env.RegisterActivityWithOptions(acts.UpdateShortcutIntentActivity, activity.RegisterOptions{Name: "UpdateShortcutIntentActivity"})
 
 	intentID := uuid.New()
+	txnID := uuid.New()
 	pendingIntent := &core.ShortcutIntent{ID: intentID}
 
 	env.OnActivity("PendingShortcutIntentActivity", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(pendingIntent, nil)
+	env.OnActivity("CreateTransactionActivity", mock.Anything, mock.Anything).Return(&txnID, nil)
 	env.OnActivity("UpdateShortcutIntentActivity", mock.Anything, mock.Anything).Return((*uuid.UUID)(nil), errors.New("update intent failed"))
 
 	env.ExecuteWorkflow(CreateTransactionWorkflow, core.Transaction{})

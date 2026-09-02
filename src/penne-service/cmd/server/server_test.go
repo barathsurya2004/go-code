@@ -149,7 +149,7 @@ func TestServer(t *testing.T) {
 
 	userHandler := handlers.NewUserServiceHandler(&dummyUserRepo{}, tokenRepo, log, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, mockDB)
 	txnHandler := handlers.NewTransactionServiceHandler(&dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB, nil, core.RepoContainer{})
-	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, &dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB)
+	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, &dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB, nil, core.RepoContainer{})
 	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 	shortcutIntentRepo := &dummyShortcutIntentRepo{}
 

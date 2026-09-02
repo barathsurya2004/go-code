@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
+	"go.uber.org/cadence/client"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +22,8 @@ type BudgetingServiceHandler struct {
 	TransactionRepo    core.TransactionRepository
 	logger             *zap.Logger
 	db                 *sql.DB
+	cadenceClient      client.Client
+	repos              core.RepoContainer
 }
 
 func NewBudgetingServiceHandler(
@@ -30,6 +34,8 @@ func NewBudgetingServiceHandler(
 	shortcutIntentRepo core.ShortcutIntentRepository,
 	logger *zap.Logger,
 	db *sql.DB,
+	cc client.Client,
+	repos core.RepoContainer,
 ) *BudgetingServiceHandler {
 	return &BudgetingServiceHandler{
 		envelopeGroupRepo:  envelopeGroupRepo,
@@ -39,6 +45,8 @@ func NewBudgetingServiceHandler(
 		TransactionRepo:    TransactionRepo,
 		logger:             logger,
 		db:                 db,
+		cadenceClient:      cc,
+		repos:              repos,
 	}
 }
 
@@ -514,15 +522,7 @@ func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter,
 		return
 	}
 
-	sx, err := h.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		h.logger.Error("Failed to begin transaction", zap.Error(err))
-		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
-		return
-	}
-	defer sx.Rollback()
-
-	envID, err := h.envelopeRepo.GetEnvelopeIdByName(req.Name, userUUID, sx)
+	envID, err := h.envelopeRepo.GetEnvelopeIdByName(req.Name, userUUID, nil)
 	if err != nil {
 		h.logger.Error("Failed to get envelope ID by name", zap.String("name", req.Name), zap.Error(err))
 		http.Error(w, "Failed to get envelope ID by name", http.StatusInternalServerError)
@@ -543,38 +543,37 @@ func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter,
 		CreatedAt:  createdAt,
 	}
 
-	if shortcutIntent.ID, err = h.ShortcutIntentRepo.CreateShortcutIntent(shortcutIntent, sx); err != nil {
-		h.logger.Error("Failed to create shortcut intent", zap.Error(err))
-		http.Error(w, "Failed to create shortcut intent", http.StatusInternalServerError)
-		return
-	}
-
-	err = h.IntentProcessingWorkflow(shortcutIntent, userUUID, sx)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			h.logger.Info("No matching transaction found for intent, keeping intent pending")
-			if err := sx.Commit(); err != nil {
-				h.logger.Error("Failed to commit transaction", zap.Error(err))
-				http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusCreated)
-			return
+	var resultIntent *core.ShortcutIntent
+	if h.cadenceClient != nil {
+		wfOptions := client.StartWorkflowOptions{
+			ID:                           uuid.NewString(),
+			TaskList:                     cadence.TaskListName,
+			ExecutionStartToCloseTimeout: 5 * time.Minute,
 		}
-		h.logger.Error("Failed to process shortcut intent", zap.Error(err))
-		http.Error(w, "Failed to process shortcut intent", http.StatusInternalServerError)
-		return
+		workflowRun, err := h.cadenceClient.ExecuteWorkflow(
+			r.Context(),
+			wfOptions,
+			"CreateShortcutIntentWorkflow",
+			*shortcutIntent,
+		)
+
+		if err != nil {
+			h.logger.Error("Failed to start cadence workflow", zap.Error(err))
+		} else if workflowRun != nil {
+			if err := workflowRun.Get(r.Context(), &resultIntent); err != nil {
+				h.logger.Error("workflow Execution failed", zap.Error(err))
+			}
+		}
 	}
 
-	if err := sx.Commit(); err != nil {
-		h.logger.Error("Failed to commit transaction", zap.Error(err))
-		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
-		return
+	respIntent := shortcutIntent
+	if resultIntent != nil {
+		respIntent = resultIntent
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(shortcutIntent)
+	json.NewEncoder(w).Encode(respIntent)
 }
 
 func (h *BudgetingServiceHandler) IntentProcessingWorkflow(shortcutIntent *core.ShortcutIntent, userUUID uuid.UUID, Tx *sql.Tx) error {

@@ -25,8 +25,8 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var txnID uuid.UUID
-	lowTime := txn.CreatedAt.Add(-5 * time.Second).UTC()
-	highTime := txn.CreatedAt.Add(5 * time.Second).UTC()
+	lowTime := txn.CreatedAt.Add(-10 * time.Minute).UTC()
+	highTime := txn.CreatedAt.Add(5 * time.Minute).UTC()
 
 	var pendingShortcutIntent *core.ShortcutIntent
 
@@ -38,21 +38,22 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 	if pendingShortcutIntent != nil {
 		txn.ShortcutIntentID = &pendingShortcutIntent.ID
 		txn.EnvelopeID = pendingShortcutIntent.EnvelopeID
-		pendingShortcutIntent.Status = core.StatusSettled
-		pendingShortcutIntent.TransactionID = &txn.ID
-		err = workflow.ExecuteActivity(
-			ctx,
-			"UpdateShortcutIntentActivity",
-			pendingShortcutIntent,
-		).Get(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
 		err = workflow.ExecuteActivity(
 			ctx,
 			"CreateTransactionActivity",
 			txn,
 		).Get(ctx, &txnID)
+		if err != nil {
+			return nil, err
+		}
+		txn.ID = txnID
+		pendingShortcutIntent.Status = core.StatusSettled
+		pendingShortcutIntent.TransactionID = &txnID
+		err = workflow.ExecuteActivity(
+			ctx,
+			"UpdateShortcutIntentActivity",
+			pendingShortcutIntent,
+		).Get(ctx, nil)
 		if err != nil {
 			return nil, err
 		}

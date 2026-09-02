@@ -47,8 +47,38 @@ func (a *TransactionActivities) PendingShortcutIntentActivity(ctx context.Contex
 
 func (a *TransactionActivities) UpdateShortcutIntentActivity(ctx context.Context, shortcutIntent *core.ShortcutIntent) (*uuid.UUID, error) {
 	if err := a.Repos.ShortcutIntent.UpdateShortcutIntent(shortcutIntent, nil); err != nil {
-		a.logger.Error("Failed to create transaction workflow", zap.Error(err))
+		a.logger.Error("Failed to update shortcut intent", zap.Error(err))
 		return nil, err
 	}
 	return shortcutIntent.TransactionID, nil
+}
+
+func (a *TransactionActivities) CreateShortcutIntent(ctx context.Context, shortcutIntent core.ShortcutIntent) (*uuid.UUID, error) {
+	intentID, err := a.Repos.ShortcutIntent.CreateShortcutIntent(&shortcutIntent, nil)
+	if err != nil {
+		a.logger.Error("Failed to create shortcut intent", zap.Error(err))
+		return nil, err
+	}
+	return &intentID, nil
+}
+
+func (a *TransactionActivities) GetTransactionByTimeActivity(ctx context.Context, TimeLowerbound, TimeUpperbound time.Time) (*core.Transaction, error) {
+	txn, err := a.Repos.Transaction.GetTransactionByTime(TimeLowerbound, TimeUpperbound, nil)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			a.logger.Warn("No matching transaction found for intent")
+			return nil, nil
+		}
+		a.logger.Error("Failed to get transaction by time", zap.Error(err))
+		return nil, err
+	}
+	return txn, nil
+}
+
+func (a *TransactionActivities) UpdateTransactionActivity(ctx context.Context, txn core.Transaction) error {
+	if err := a.Repos.Transaction.UpdateTransaction(&txn, nil); err != nil {
+		a.logger.Error("Failed to update transaction", zap.Error(err))
+		return err
+	}
+	return nil
 }
