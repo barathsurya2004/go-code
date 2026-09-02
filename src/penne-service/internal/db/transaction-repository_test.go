@@ -568,3 +568,105 @@ func TestPgTransactionRowsRepo_GetTransactionByUserUUIDPaginated(t *testing.T) {
 		}
 	})
 }
+
+func TestPgTransactionRowsRepo_GetTransactionByAmountAndTime(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgTransactionRowsRepo(db)
+	userUUID := uuid.New()
+	now := time.Now()
+	t1 := now.Add(-5 * time.Minute)
+	t2 := now.Add(5 * time.Minute)
+
+	t.Run("Empty User UUID", func(t *testing.T) {
+		_, err := repo.GetTransactionByAmountAndTime(uuid.Nil, 500, t1, t2, nil)
+		if err == nil || err.Error() != "user UUID is required" {
+			t.Errorf("expected user UUID is required error, got %v", err)
+		}
+	})
+
+	t.Run("Zero Amount", func(t *testing.T) {
+		_, err := repo.GetTransactionByAmountAndTime(userUUID, 0, t1, t2, nil)
+		if err == nil || err.Error() != "amount must be greater than zero" {
+			t.Errorf("expected amount must be greater than zero error, got %v", err)
+		}
+	})
+
+	t.Run("Negative Amount", func(t *testing.T) {
+		_, err := repo.GetTransactionByAmountAndTime(userUUID, -100, t1, t2, nil)
+		if err == nil || err.Error() != "amount must be greater than zero" {
+			t.Errorf("expected amount must be greater than zero error, got %v", err)
+		}
+	})
+
+	t.Run("Zero Time Range", func(t *testing.T) {
+		_, err := repo.GetTransactionByAmountAndTime(userUUID, 500, time.Time{}, t2, nil)
+		if err == nil || err.Error() != "time range is required" {
+			t.Errorf("expected time range is required error, got %v", err)
+		}
+	})
+
+	t.Run("Invalid Time Range Bounds", func(t *testing.T) {
+		_, err := repo.GetTransactionByAmountAndTime(userUUID, 500, t2, t1, nil)
+		if err == nil || err.Error() != "time lowerbound cannot be after time upperbound" {
+			t.Errorf("expected lowerbound after upperbound error, got %v", err)
+		}
+	})
+
+	t.Run("Success without Tx", func(t *testing.T) {
+		txnID := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "shortcut_intent_id"}).
+			AddRow(txnID, userUUID, nil, int64(500), "US", "bank_account", "debit", now, nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id FROM transactionrows").
+			WithArgs(userUUID, int64(500), t1, t2).
+			WillReturnRows(rows)
+
+		txn, err := repo.GetTransactionByAmountAndTime(userUUID, 500, t1, t2, nil)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if txn == nil || txn.ID != txnID {
+			t.Errorf("expected txn ID %v, got %v", txnID, txn)
+		}
+	})
+
+	t.Run("Success with Tx", func(t *testing.T) {
+		txnID := uuid.New()
+		mock.ExpectBegin()
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("failed to begin tx: %v", err)
+		}
+
+		rows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "shortcut_intent_id"}).
+			AddRow(txnID, userUUID, nil, int64(500), "US", "bank_account", "debit", now, nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id FROM transactionrows").
+			WithArgs(userUUID, int64(500), t1, t2).
+			WillReturnRows(rows)
+
+		txn, err := repo.GetTransactionByAmountAndTime(userUUID, 500, t1, t2, tx)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if txn == nil || txn.ID != txnID {
+			t.Errorf("expected txn ID %v, got %v", txnID, txn)
+		}
+	})
+
+	t.Run("Query Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id FROM transactionrows").
+			WithArgs(userUUID, int64(500), t1, t2).
+			WillReturnError(errors.New("db error"))
+
+		_, err := repo.GetTransactionByAmountAndTime(userUUID, 500, t1, t2, nil)
+		if err == nil {
+			t.Errorf("expected query error, got nil")
+		}
+	})
+}

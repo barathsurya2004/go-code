@@ -302,3 +302,62 @@ func (h *TransactionServiceHandler) DashboardSummaryHandler(w http.ResponseWrite
 	json.NewEncoder(w).Encode(DashboardSummary)
 
 }
+
+type changeTransactionToTransferRequest struct {
+	AmountE5  int64     `json:"amount_e5"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (h *TransactionServiceHandler) ChangeTransactionToTransfer(w http.ResponseWriter, r *http.Request) {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
+		h.logger.Error("No user UUID found in request context")
+		return
+	}
+
+	var req changeTransactionToTransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		h.logger.Error("Failed to decode payload", zap.Error(err))
+		return
+	}
+
+	if req.AmountE5 <= 0 {
+		http.Error(w, "Amount must be greater than zero", http.StatusBadRequest)
+		h.logger.Error("Invalid amount_e5 provided")
+		return
+	}
+
+	targetTime := utils.NowUTC()
+	if !req.CreatedAt.IsZero() {
+		targetTime = req.CreatedAt.UTC()
+	}
+
+	timeLowerbound := targetTime.Add(-5 * time.Minute)
+	timeUpperbound := targetTime.Add(5 * time.Minute)
+
+	txn, err := h.transactionRepo.GetTransactionByAmountAndTime(userUUID, req.AmountE5, timeLowerbound, timeUpperbound, nil)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Transaction not found", http.StatusNotFound)
+			h.logger.Warn("Transaction not found for transfer conversion", zap.String("user_uuid", userUUID.String()), zap.Int64("amount_e5", req.AmountE5))
+			return
+		}
+		http.Error(w, "Failed to find transaction", http.StatusInternalServerError)
+		h.logger.Error("Failed to find transaction for transfer conversion", zap.Error(err))
+		return
+	}
+
+	txn.Type = core.TxnTypeTransfer
+	if err := h.transactionRepo.UpdateTransaction(txn, nil); err != nil {
+		http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
+		h.logger.Error("Failed to update transaction type to transfer", zap.Error(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(txn)
+}
+

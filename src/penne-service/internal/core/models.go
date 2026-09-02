@@ -14,6 +14,10 @@ const (
 	StatusPending = "PENDING"
 	StatusSettled = "SETTLED"
 	StatusExpired = "EXPIRED"
+
+	TxnTypeCredit   = "credit"
+	TxnTypeDebit    = "debit"
+	TxnTypeTransfer = "transfer"
 )
 
 type Transaction struct {
@@ -33,6 +37,7 @@ type TransactionRepository interface {
 	GetTransactionByUUID(uuid uuid.UUID) (*Transaction, error)
 	GetTransactionsByUserUUID(userUUID uuid.UUID) ([]*Transaction, error)
 	GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*Transaction, error)
+	GetTransactionByAmountAndTime(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*Transaction, error)
 	UpdateTransaction(txn *Transaction, Tx *sql.Tx) error
 	DeleteTransaction(uuid uuid.UUID) error
 	GetDashboardSummary(uuid uuid.UUID) (*DashboardSummary, error)

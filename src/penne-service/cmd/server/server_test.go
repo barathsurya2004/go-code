@@ -67,6 +67,9 @@ func (d *dummyTxnRepo) DeleteTransaction(id uuid.UUID) error                    
 func (d *dummyTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
 	return nil, nil
 }
+func (d *dummyTxnRepo) GetTransactionByAmountAndTime(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+	return &core.Transaction{ID: uuid.New(), UserID: userUUID, AmountE5: amountE5}, nil
+}
 func (d *dummyTxnRepo) GetDashboardSummary(uuid uuid.UUID) (*core.DashboardSummary, error) {
 	return &core.DashboardSummary{}, nil
 }
@@ -245,6 +248,14 @@ func TestServer(t *testing.T) {
 		router.ServeHTTP(rrTxnDelete, reqTxnDelete)
 		if rrTxnDelete.Code != http.StatusOK {
 			t.Errorf("expected status 200 for DELETE /transaction route, got %d", rrTxnDelete.Code)
+		}
+
+		reqTxnTransfer := httptest.NewRequest("POST", "/transaction/transfer", io.NopCloser(bytes.NewReader([]byte(`{"amount_e5":500}`))))
+		reqTxnTransfer.Header.Set("Authorization", validAuthHeader)
+		rrTxnTransfer := httptest.NewRecorder()
+		router.ServeHTTP(rrTxnTransfer, reqTxnTransfer)
+		if rrTxnTransfer.Code != http.StatusOK {
+			t.Errorf("expected status 200 for POST /transaction/transfer route, got %d", rrTxnTransfer.Code)
 		}
 	})
 

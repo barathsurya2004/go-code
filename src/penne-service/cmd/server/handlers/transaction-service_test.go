@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +50,8 @@ type mockTxnRepo struct {
 	getTransactionsByUserUUIDFn func(userUUID uuid.UUID) ([]*core.Transaction, error)
 	updateTransactionFn         func(txn *core.Transaction) error
 	deleteTransactionFn         func(id uuid.UUID) error
-	getTransactionByTimeFn      func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
+	getTransactionByTimeFn              func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
+	getTransactionByAmountAndTimeFn     func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 	getDashboardSummaryFn               func(uuid uuid.UUID) (*core.DashboardSummary, error)
 	getTransactionByUserUUIDPaginatedFn func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error)
 }
@@ -92,6 +94,13 @@ func (m *mockTxnRepo) DeleteTransaction(id uuid.UUID) error {
 func (m *mockTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
 	if m.getTransactionByTimeFn != nil {
 		return m.getTransactionByTimeFn(time_lowerbound, time_upperbound, Tx)
+	}
+	return nil, nil
+}
+
+func (m *mockTxnRepo) GetTransactionByAmountAndTime(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+	if m.getTransactionByAmountAndTimeFn != nil {
+		return m.getTransactionByAmountAndTimeFn(userUUID, amountE5, time_lowerbound, time_upperbound, Tx)
 	}
 	return nil, nil
 }
@@ -577,6 +586,146 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+}
+
+func TestTransactionServiceHandler_ChangeTransactionToTransfer(t *testing.T) {
+	logger := zap.NewNop()
+	shortcutIntentRepo := &mockShortcutIntentRepo{}
+	db, _, _ := sqlmock.New()
+	defer db.Close()
+	validUserUUID := uuid.New()
+	txnID := uuid.New()
+
+	t.Run("Missing User UUID", func(t *testing.T) {
+		h := NewTransactionServiceHandler(&mockTxnRepo{}, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`{"amount_e5": 1000}`)))
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("Invalid JSON Payload", func(t *testing.T) {
+		h := NewTransactionServiceHandler(&mockTxnRepo{}, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`invalid-json`)))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("Invalid Amount (Zero or Negative)", func(t *testing.T) {
+		h := NewTransactionServiceHandler(&mockTxnRepo{}, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`{"amount_e5": 0}`)))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("Transaction Not Found (ErrNoRows)", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			getTransactionByAmountAndTimeFn: func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`{"amount_e5": 1000}`)))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected status %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("Find Transaction DB Error", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			getTransactionByAmountAndTimeFn: func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return nil, errors.New("db find error")
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`{"amount_e5": 1000}`)))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("Update Transaction DB Error", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			getTransactionByAmountAndTimeFn: func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				return &core.Transaction{ID: txnID, UserID: userUUID, AmountE5: amountE5, Type: "debit"}, nil
+			},
+			updateTransactionFn: func(txn *core.Transaction) error {
+				return errors.New("db update error")
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer([]byte(`{"amount_e5": 1000}`)))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("Success with Custom CreatedAt", func(t *testing.T) {
+		customTime := time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC)
+		var capturedLower, capturedUpper time.Time
+		txnRepo := &mockTxnRepo{
+			getTransactionByAmountAndTimeFn: func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+				capturedLower = time_lowerbound
+				capturedUpper = time_upperbound
+				return &core.Transaction{ID: txnID, UserID: userUUID, AmountE5: amountE5, Type: "debit", CreatedAt: customTime}, nil
+			},
+			updateTransactionFn: func(txn *core.Transaction) error {
+				if txn.Type != core.TxnTypeTransfer {
+					return errors.New("expected type transfer")
+				}
+				return nil
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		body, _ := json.Marshal(map[string]interface{}{
+			"amount_e5":  1000,
+			"created_at": customTime.Format(time.RFC3339),
+		})
+		req := httptest.NewRequest("POST", "/transaction/transfer", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ChangeTransactionToTransfer(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !capturedLower.Equal(customTime.Add(-5 * time.Minute)) || !capturedUpper.Equal(customTime.Add(5 * time.Minute)) {
+			t.Errorf("unexpected time window: [%v, %v]", capturedLower, capturedUpper)
+		}
+
+		var respTxn core.Transaction
+		if err := json.NewDecoder(rr.Body).Decode(&respTxn); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if respTxn.Type != core.TxnTypeTransfer {
+			t.Errorf("expected type %s, got %s", core.TxnTypeTransfer, respTxn.Type)
 		}
 	})
 }

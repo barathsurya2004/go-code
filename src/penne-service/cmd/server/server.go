@@ -68,6 +68,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transactions", app.transactionHandler.GetTransactionsByUserUUID).Methods("GET")
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
+	mux.HandleFunc("/transaction/transfer", app.transactionHandler.ChangeTransactionToTransfer).Methods("POST")
 
 	// envelope group endpoints
 	mux.HandleFunc("/envelope-group", app.budgetingHandler.CreateEnvelopeGroup).Methods("POST")

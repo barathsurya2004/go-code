@@ -296,6 +296,50 @@ func (r *pgTransactionRowsRepo) GetTransactionByTime(time_lowerbound, time_upper
 	return txn, nil
 }
 
+func (r *pgTransactionRowsRepo) GetTransactionByAmountAndTime(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+	// validation checks
+	if userUUID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	if amountE5 <= 0 {
+		return nil, errors.New("amount must be greater than zero")
+	}
+	if time_lowerbound.IsZero() || time_upperbound.IsZero() {
+		return nil, errors.New("time range is required")
+	}
+	if time_lowerbound.After(time_upperbound) {
+		return nil, errors.New("time lowerbound cannot be after time upperbound")
+	}
+	query := `
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
+		FROM transactionrows
+		WHERE user_id = $1 AND amount_e5 = $2 AND created_at BETWEEN $3 AND $4
+		ORDER BY created_at DESC LIMIT 1
+	`
+	txn := &core.Transaction{}
+	var row *sql.Row
+	if Tx != nil {
+		row = Tx.QueryRowContext(context.Background(), query, userUUID, amountE5, time_lowerbound, time_upperbound)
+	} else {
+		row = r.db.QueryRowContext(context.Background(), query, userUUID, amountE5, time_lowerbound, time_upperbound)
+	}
+	err := row.Scan(
+		&txn.ID,
+		&txn.UserID,
+		&txn.EnvelopeID,
+		&txn.AmountE5,
+		&txn.CountryISO,
+		&txn.PaymentMethod,
+		&txn.Type,
+		&txn.CreatedAt,
+		&txn.ShortcutIntentID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return txn, nil
+}
+
 func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) {
 	query := `
 		SELECT 
