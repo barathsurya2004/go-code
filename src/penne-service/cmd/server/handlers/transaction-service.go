@@ -76,9 +76,15 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 
 		if err != nil {
 			h.logger.Error("Failed to start cadence workflow", zap.Error(err))
+			// return workflow failed status
+			http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+			return
 		} else if workflowRun != nil {
 			if err := workflowRun.Get(r.Context(), &resultUUID); err != nil {
 				h.logger.Error("workflow Excecution failed", zap.Error(err))
+				// return workflow failed status
+				http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+				return
 			}
 
 			if resultUUID != nil {
@@ -360,4 +366,3 @@ func (h *TransactionServiceHandler) ChangeTransactionToTransfer(w http.ResponseW
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(txn)
 }
-

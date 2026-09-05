@@ -562,6 +562,26 @@ func TestBudgetingServiceHandler_Envelope(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateEnvelope - Existing Envelope GetByID Error", func(t *testing.T) {
+		existingID := uuid.New()
+		envRepo.getByNameFn = func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return existingID, nil
+		}
+		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {
+			return nil, errors.New("db error")
+		}
+
+		body, _ := json.Marshal(core.Envelope{Name: "Groceries"})
+		req := httptest.NewRequest("POST", "/envelope", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		handler.CreateEnvelope(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
 	t.Run("GetEnvelopeByID - Success", func(t *testing.T) {
 		envID := uuid.New()
 		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {

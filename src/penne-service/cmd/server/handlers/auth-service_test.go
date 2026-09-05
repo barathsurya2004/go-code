@@ -3,9 +3,11 @@ package handlers
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -138,6 +140,24 @@ func TestAuthServiceHandler_SignUp(t *testing.T) {
 
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("New User SignUp Password Hash Error", func(t *testing.T) {
+		userRepo := &mockUserRepo{
+			getUserByEmailFn: func(email string) (*core.User, error) {
+				return nil, errors.New("not found")
+			},
+		}
+		h := NewAuthServiceHandler(userRepo, &mockTokenRepo{}, &mockEnvelopeGroupRepo{}, &mockEnvelopeRepo{}, &mockAllocationRepo{}, log, nil)
+		longPassword := strings.Repeat("a", 73)
+		reqBody := fmt.Sprintf(`{"email":"toolong@example.com","name":"New User","password":"%s"}`, longPassword)
+		req := httptest.NewRequest("POST", "/auth/signup", bytes.NewReader([]byte(reqBody)))
+		rr := httptest.NewRecorder()
+		h.SignUp(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", rr.Code)
 		}
 	})
 

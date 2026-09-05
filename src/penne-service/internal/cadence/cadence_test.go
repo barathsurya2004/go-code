@@ -62,3 +62,22 @@ func TestNewCadenceServiceClient(t *testing.T) {
 	_ = app.Start(ctx)
 	_ = app.Stop(ctx)
 }
+
+func TestNewCadenceServiceClient_Error(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := &CadenceConfig{ServiceName: ""}
+	var serviceClient workflowserviceclient.Interface
+
+	app := fx.New(
+		fx.Provide(
+			func() *CadenceConfig { return cfg },
+			func() *zap.Logger { return logger },
+			NewCadenceServiceClient,
+		),
+		fx.Populate(&serviceClient),
+	)
+
+	if err := app.Err(); err == nil {
+		t.Error("expected error with empty service name, got nil")
+	}
+}

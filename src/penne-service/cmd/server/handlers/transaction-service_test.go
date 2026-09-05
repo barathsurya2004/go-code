@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -194,6 +195,29 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateTransaction - Success with Cadence Client returning nil resultUUID", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return nil
+					},
+				}, nil
+			},
+		}
+
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBufferString(`{"amount_e5":100}`))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.CreateTransaction(rr, req)
+
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
 	t.Run("CreateTransaction - ExecuteWorkflow Error", func(t *testing.T) {
 		cc := &mockCadenceClient{
 			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
@@ -208,8 +232,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 		cadenceHandler.CreateTransaction(rr, req)
 
-		if rr.Code != http.StatusCreated {
-			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 
@@ -231,8 +255,8 @@ func TestTransactionServiceHandler(t *testing.T) {
 
 		cadenceHandler.CreateTransaction(rr, req)
 
-		if rr.Code != http.StatusCreated {
-			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 
@@ -286,6 +310,17 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("GetTransactionsByUserUUID - Invalid User UUID in Query", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/transactions?user_uuid=invalid", nil)
+		rr := httptest.NewRecorder()
+
+		handler.GetTransactionsByUserUUID(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
 	t.Run("GetTransactionsByUserUUID - Repo Error", func(t *testing.T) {
 		repo.getTransactionByUserUUIDPaginatedFn = func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
 			return nil, errors.New("db error")
@@ -305,6 +340,43 @@ func TestTransactionServiceHandler(t *testing.T) {
 			return []*core.Transaction{{ID: uuid.New(), UserID: userUUID}}, nil
 		}
 		req := httptest.NewRequest("GET", "/transactions?user_uuid="+validUUID.String(), nil)
+		rr := httptest.NewRecorder()
+
+		handler.GetTransactionsByUserUUID(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("GetTransactionsByUserUUID - Success with Context, Limit, RFC3339 Timestamp, and LastID", func(t *testing.T) {
+		lastID := uuid.New()
+		repo.getTransactionByUserUUIDPaginatedFn = func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
+			if limit != 15 || lastTransactionID != lastID {
+				return nil, errors.New("unexpected params")
+			}
+			return []*core.Transaction{{ID: uuid.New(), UserID: userUUID}}, nil
+		}
+		req := httptest.NewRequest("GET", fmt.Sprintf("/transactions?limit=15&lastTransactionCreatedAt=2026-01-01T15:04:05Z&lastTransactionID=%s", lastID.String()), nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		handler.GetTransactionsByUserUUID(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("GetTransactionsByUserUUID - Success with Fallback Timestamp Format and Invalid Limit", func(t *testing.T) {
+		repo.getTransactionByUserUUIDPaginatedFn = func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
+			if limit != 20 {
+				return nil, errors.New("expected default limit 20")
+			}
+			return []*core.Transaction{{ID: uuid.New(), UserID: userUUID}}, nil
+		}
+		req := httptest.NewRequest("GET", "/transactions?limit=invalid&lastTransactionCreatedAt=not-rfc-date", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		handler.GetTransactionsByUserUUID(rr, req)
@@ -368,13 +440,18 @@ func TestTransactionServiceHandler(t *testing.T) {
 	})
 
 	t.Run("UpdateTransaction - Success", func(t *testing.T) {
+		envID := uuid.New()
 		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
 			return &core.Transaction{ID: id}, nil
 		}
 		repo.updateTransactionFn = func(txn *core.Transaction) error {
+			if txn.AmountE5 != 500 || txn.Type != "expense" || txn.EnvelopeID == nil || *txn.EnvelopeID != envID {
+				return errors.New("mismatched update fields")
+			}
 			return nil
 		}
-		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{"id":"`+validUUID.String()+`"}`))
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":500,"txn_type":"expense","envelope_id":"%s"}`, validUUID.String(), envID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
 		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
@@ -533,6 +610,45 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateTransactionWorkflow - Success with Custom CreatedAt", func(t *testing.T) {
+		txnID := uuid.New()
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		res, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000, CreatedAt: time.Now()}, validUUID, nil)
+		if err != nil || res == nil || *res != txnID {
+			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
+		}
+	})
+
+	t.Run("CreateTransactionWorkflow - Error Creating Transaction without Pending Shortcut Intent", func(t *testing.T) {
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return uuid.Nil, errors.New("db error")
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{})
+		_, err := h.CreateTransactionWorkflow(&core.Transaction{AmountE5: 1000}, validUUID, nil)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+	})
+
 	t.Run("DashboardSummaryHandler - Missing User UUID", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/dashboard-summary", nil)
 		rr := httptest.NewRecorder()
@@ -580,6 +696,24 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 		h := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
 		req := httptest.NewRequest("GET", "/api/dashboard-summary?user_uuid="+validUUID.String(), nil)
+		rr := httptest.NewRecorder()
+
+		h.DashboardSummaryHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("DashboardSummaryHandler - Success with Context User UUID", func(t *testing.T) {
+		localTxnRepo := &mockTxnRepo{
+			getDashboardSummaryFn: func(userUUID uuid.UUID) (*core.DashboardSummary, error) {
+				return &core.DashboardSummary{TotalIncomeE5: 5000}, nil
+			},
+		}
+		h := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{})
+		req := httptest.NewRequest("GET", "/api/dashboard-summary", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
 		rr := httptest.NewRecorder()
 
 		h.DashboardSummaryHandler(rr, req)
