@@ -187,6 +187,8 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	json.NewEncoder(w).Encode(txs)
 }
 
@@ -305,6 +307,8 @@ func (h *TransactionServiceHandler) DashboardSummaryHandler(w http.ResponseWrite
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	json.NewEncoder(w).Encode(DashboardSummary)
 
 }

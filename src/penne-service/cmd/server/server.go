@@ -171,7 +171,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, ngrok-skip-browser-warning, X-Requested-With, Accept, Origin")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, ngrok-skip-browser-warning, X-Requested-With, Accept, Origin, Cache-Control, Pragma")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		// Handle preflight OPTIONS requests immediately
