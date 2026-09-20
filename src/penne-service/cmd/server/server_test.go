@@ -28,6 +28,9 @@ func (d *dummyUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) { return
 func (d *dummyUserRepo) GetUserByEmail(email string) (*core.User, error) {
 	return nil, nil
 }
+func (d *dummyUserRepo) UpdateBudgetSettings(userUUID uuid.UUID, monthlyBudgetE5 int64, salaryDay int, Tx *sql.Tx) error {
+	return nil
+}
 
 type dummyTokenRepo struct{}
 
@@ -144,6 +147,36 @@ func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID,
 func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
 func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error       { return nil }
 
+type dummyWishlistRepo struct{}
+
+func (d *dummyWishlistRepo) CreateWishlistItem(item *core.WishlistItem, tx *sql.Tx) (uuid.UUID, error) {
+	return validTokenUUID, nil
+}
+func (d *dummyWishlistRepo) GetWishlistItemByID(id uuid.UUID) (*core.WishlistItem, error) {
+	return &core.WishlistItem{ID: id, Title: "Item", TargetAmountE5: 10000000}, nil
+}
+func (d *dummyWishlistRepo) GetWishlistItemsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistItem, error) {
+	return []*core.WishlistItem{}, nil
+}
+func (d *dummyWishlistRepo) GetActiveWishlistItemsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistItem, error) {
+	return []*core.WishlistItem{}, nil
+}
+func (d *dummyWishlistRepo) UpdateWishlistItem(item *core.WishlistItem, tx *sql.Tx) error { return nil }
+func (d *dummyWishlistRepo) DeleteWishlistItem(id uuid.UUID) error                        { return nil }
+func (d *dummyWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+	return validTokenUUID, nil
+}
+func (d *dummyWishlistRepo) GetWishlistAllocationsByItemID(itemID uuid.UUID) ([]*core.WishlistAllocation, error) {
+	return []*core.WishlistAllocation{}, nil
+}
+func (d *dummyWishlistRepo) GetWishlistAllocationsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistAllocation, error) {
+	return []*core.WishlistAllocation{}, nil
+}
+func (d *dummyWishlistRepo) UpdateWishlistAllocation(alloc *core.WishlistAllocation, tx *sql.Tx) error {
+	return nil
+}
+func (d *dummyWishlistRepo) DeleteWishlistAllocation(id uuid.UUID) error { return nil }
+
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
 	tokenRepo := &dummyTokenRepo{}
@@ -155,6 +188,10 @@ func TestServer(t *testing.T) {
 	budgetingHandler := handlers.NewBudgetingServiceHandler(&dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, &dummyTxnRepo{}, &dummyShortcutIntentRepo{}, log, mockDB, nil, core.RepoContainer{})
 	authHandler := handlers.NewAuthServiceHandler(&dummyUserRepo{}, tokenRepo, &dummyEnvelopeGroupRepo{}, &dummyEnvelopeRepo{}, &dummyAllocationRepo{}, log, mockDB)
 	shortcutIntentRepo := &dummyShortcutIntentRepo{}
+	wishlistHandler := handlers.NewWishlistServiceHandler(core.RepoContainer{
+		User:     &dummyUserRepo{},
+		Wishlist: &dummyWishlistRepo{},
+	}, log, mockDB, nil)
 
 	t.Run("NewMux", func(t *testing.T) {
 		m := NewMux()
@@ -164,15 +201,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler, shortcutIntentRepo)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler || app.shortcutIntentRepo != shortcutIntentRepo {
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, tokenRepo, authHandler, shortcutIntentRepo)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.wishlistHandler != wishlistHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler || app.shortcutIntentRepo != shortcutIntentRepo {
 			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, tokenRepo, authHandler, shortcutIntentRepo)
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, tokenRepo, authHandler, shortcutIntentRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

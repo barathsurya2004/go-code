@@ -23,6 +23,7 @@ type Application struct {
 	transactionHandler *handlers.TransactionServiceHandler
 	userHandler        *handlers.UserServiceHandler
 	budgetingHandler   *handlers.BudgetingServiceHandler
+	wishlistHandler    *handlers.WishlistServiceHandler
 	tokenRepo          core.TokenRepository
 	authHandler        *handlers.AuthServiceHandler
 	shortcutIntentRepo core.ShortcutIntentRepository
@@ -32,6 +33,7 @@ func NewApplication(
 	transactionHandler *handlers.TransactionServiceHandler,
 	userHandler *handlers.UserServiceHandler,
 	budgetingHandler *handlers.BudgetingServiceHandler,
+	wishlistHandler *handlers.WishlistServiceHandler,
 	tokenRepo core.TokenRepository,
 	authHandler *handlers.AuthServiceHandler,
 	shortcutIntentRepo core.ShortcutIntentRepository,
@@ -40,6 +42,7 @@ func NewApplication(
 		transactionHandler: transactionHandler,
 		userHandler:        userHandler,
 		budgetingHandler:   budgetingHandler,
+		wishlistHandler:    wishlistHandler,
 		tokenRepo:          tokenRepo,
 		authHandler:        authHandler,
 		shortcutIntentRepo: shortcutIntentRepo,
@@ -61,6 +64,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	// user endpoints
 	mux.HandleFunc("/user", app.userHandler.CreateUser).Methods("POST")
 	mux.HandleFunc("/user", app.userHandler.GetUserByUUID).Methods("GET")
+	mux.HandleFunc("/user/budget-settings", app.wishlistHandler.UpdateBudgetSettings).Methods("PUT")
 
 	// transaction endpoints
 	mux.HandleFunc("/transaction", app.transactionHandler.CreateTransaction).Methods("POST")
@@ -91,6 +95,15 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/allocations/active", app.budgetingHandler.GetActiveAllocationsByUserUUID).Methods("GET")
 	mux.HandleFunc("/allocation", app.budgetingHandler.UpdateAllocation).Methods("PUT")
 	mux.HandleFunc("/allocation", app.budgetingHandler.DeleteAllocation).Methods("DELETE")
+
+	// wishlist endpoints
+	mux.HandleFunc("/wishlist", app.wishlistHandler.CreateWishlistItem).Methods("POST")
+	mux.HandleFunc("/wishlists", app.wishlistHandler.GetWishlistItems).Methods("GET")
+	mux.HandleFunc("/wishlist", app.wishlistHandler.GetWishlistItemByID).Methods("GET")
+	mux.HandleFunc("/wishlist", app.wishlistHandler.UpdateWishlistItem).Methods("PUT")
+	mux.HandleFunc("/wishlist", app.wishlistHandler.DeleteWishlistItem).Methods("DELETE")
+	mux.HandleFunc("/wishlist/forecast", app.wishlistHandler.GetForecast).Methods("GET")
+	mux.HandleFunc("/wishlist/distribute", app.wishlistHandler.DistributeSurplus).Methods("POST")
 
 	// apis
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
