@@ -2,6 +2,7 @@ package cadence
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 
@@ -20,9 +21,10 @@ var registerWorkflowOnce sync.Once
 var registerActivitiesOnce sync.Once
 
 // RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
-func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
+func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger) {
 	transactionAct := activities.NewTransactionActivities(repos, logger)
 	userAct := activities.NewUserActivities(repos, logger)
+	wishlistAct := activities.NewWishlistActivities(repos, db, logger)
 	registerActivitiesOnce.Do(func() {
 		activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
 		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
@@ -37,6 +39,9 @@ func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
 		activity.RegisterWithOptions(userAct.CreateSystemEnvelopeActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeActivity"})
 		activity.RegisterWithOptions(userAct.CreateDefaultAllocationActivity, activity.RegisterOptions{Name: "CreateDefaultAllocationActivity"})
 		activity.RegisterWithOptions(userAct.CreateUserTokenActivity, activity.RegisterOptions{Name: "CreateUserTokenActivity"})
+
+		activity.RegisterWithOptions(wishlistAct.CalculateWishlistForecastActivity, activity.RegisterOptions{Name: "CalculateWishlistForecastActivity"})
+		activity.RegisterWithOptions(wishlistAct.ApplyWishlistSurplusActivity, activity.RegisterOptions{Name: "ApplyWishlistSurplusActivity"})
 	})
 }
 
@@ -46,18 +51,19 @@ func RegisterWorkflows() {
 		workflow.RegisterWithOptions(workflows.CreateShortcutIntentWorkflow, workflow.RegisterOptions{Name: "CreateShortcutIntentWorkflow"})
 		workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
 		workflow.RegisterWithOptions(workflows.CreateUserWorkflow, workflow.RegisterOptions{Name: "CreateUserWorkflow"})
+		workflow.RegisterWithOptions(workflows.SettleWishlistWorkflow, workflow.RegisterOptions{Name: "SettleWishlistWorkflow"})
 	})
 
 }
 
 // StartWorker creates, registers, and starts a standalone Cadence worker instance.
-func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger, repos core.RepoContainer, lc fx.Lifecycle) (worker.Worker, error) {
+func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger, repos core.RepoContainer, db *sql.DB, lc fx.Lifecycle) (worker.Worker, error) {
 	if serviceClient == nil {
 		return nil, errors.New("serviceClient is required")
 	}
 
 	RegisterWorkflows()
-	RegisterActivities(repos, logger)
+	RegisterActivities(repos, db, logger)
 
 	workerOptions := worker.Options{
 		Logger: logger,

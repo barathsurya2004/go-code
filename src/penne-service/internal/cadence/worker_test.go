@@ -13,14 +13,14 @@ import (
 
 func TestRegisterWorkflowsAndActivities(t *testing.T) {
 	RegisterWorkflows()
-	RegisterActivities(core.RepoContainer{}, zap.NewNop())
+	RegisterActivities(core.RepoContainer{}, nil, zap.NewNop())
 }
 
 func TestStartWorker_NilClientError(t *testing.T) {
 	logger := zap.NewNop()
 	cfg := NewCadenceConfig()
 	lc := fxtest.NewLifecycle(t)
-	_, err := StartWorker(nil, cfg, logger, core.RepoContainer{}, lc)
+	_, err := StartWorker(nil, cfg, logger, core.RepoContainer{}, nil, lc)
 	if err == nil {
 		t.Error("expected error when serviceClient is nil, got nil")
 	}
@@ -45,7 +45,7 @@ func TestStartWorker_WithServiceClient(t *testing.T) {
 	}
 
 	lc := fxtest.NewLifecycle(t)
-	w, err := StartWorker(serviceClient, cfg, logger, core.RepoContainer{}, lc)
+	w, err := StartWorker(serviceClient, cfg, logger, core.RepoContainer{}, nil, lc)
 	if err != nil {
 		t.Fatalf("expected no error creating worker, got %v", err)
 	}
