@@ -13,6 +13,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/google/uuid"
+	"go.uber.org/cadence/client"
 	"go.uber.org/zap"
 )
 
@@ -163,7 +164,7 @@ func TestUserServiceHandler(t *testing.T) {
 	}
 	defer db.Close()
 
-	handler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db)
+	handler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db, nil, core.RepoContainer{})
 	validUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 
 	t.Run("GetUserByUUID - Missing UUID", func(t *testing.T) {
@@ -397,6 +398,100 @@ func TestUserServiceHandler(t *testing.T) {
 
 		if rr.Code != http.StatusCreated {
 			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateUser - Cadence Success", func(t *testing.T) {
+		expectedTokenUUID := uuid.MustParse("99999999-e89b-12d3-a456-426614174000")
+		expectedUserUUID := uuid.MustParse("11111111-e89b-12d3-a456-426614174000")
+
+		mockCC := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						resPtr := valuePtr.(**core.CreateUserWorkflowResult)
+						*resPtr = &core.CreateUserWorkflowResult{
+							UserUUID:      expectedUserUUID,
+							UserAuthToken: expectedTokenUUID,
+						}
+						return nil
+					},
+				}, nil
+			},
+		}
+
+		cadenceHandler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db, mockCC, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Cadence User"}`))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.CreateUser(rr, req)
+
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateUser - Cadence Start Workflow Error", func(t *testing.T) {
+		mockCC := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return nil, errors.New("failed to start workflow")
+			},
+		}
+
+		cadenceHandler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db, mockCC, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Cadence User"}`))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.CreateUser(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateUser - Cadence Workflow Execution Error", func(t *testing.T) {
+		mockCC := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return errors.New("workflow failed during execution")
+					},
+				}, nil
+			},
+		}
+
+		cadenceHandler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db, mockCC, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Cadence User"}`))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.CreateUser(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("CreateUser - Cadence Workflow Nil Result", func(t *testing.T) {
+		mockCC := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						resPtr := valuePtr.(**core.CreateUserWorkflowResult)
+						*resPtr = nil
+						return nil
+					},
+				}, nil
+			},
+		}
+
+		cadenceHandler := NewUserServiceHandler(userRepo, tokenRepo, logger, envGroupRepo, envRepo, allocRepo, db, mockCC, core.RepoContainer{})
+		req := httptest.NewRequest("POST", "/user", bytes.NewBufferString(`{"name":"Cadence User"}`))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.CreateUser(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 }

@@ -176,3 +176,14 @@ type DashboardSummary struct {
 	BankSpentE5      int64 `json:"bank_spent_e5"`
 	BankLimitE5      int64 `json:"bank_limit_e5"`
 }
+
+type CreateUserWorkflowResult struct {
+	UserUUID      uuid.UUID `json:"user_uuid"`
+	UserAuthToken uuid.UUID `json:"user_auth_token"`
+}
+
+type CreateSystemEnvelopeActivityInput struct {
+	UserUUID        uuid.UUID `json:"user_uuid"`
+	EnvelopeGroupID uuid.UUID `json:"envelope_group_id"`
+}
+

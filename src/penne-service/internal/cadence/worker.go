@@ -22,6 +22,7 @@ var registerActivitiesOnce sync.Once
 // RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
 func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
 	transactionAct := activities.NewTransactionActivities(repos, logger)
+	userAct := activities.NewUserActivities(repos, logger)
 	registerActivitiesOnce.Do(func() {
 		activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
 		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
@@ -30,6 +31,12 @@ func RegisterActivities(repos core.RepoContainer, logger *zap.Logger) {
 		activity.RegisterWithOptions(transactionAct.CreateShortcutIntent, activity.RegisterOptions{Name: "CreateShortcutIntentActivity"})
 		activity.RegisterWithOptions(transactionAct.GetTransactionByTimeActivity, activity.RegisterOptions{Name: "GetTransactionByTimeActivity"})
 		activity.RegisterWithOptions(transactionAct.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
+
+		activity.RegisterWithOptions(userAct.CreateUserActivity, activity.RegisterOptions{Name: "CreateUserActivity"})
+		activity.RegisterWithOptions(userAct.CreateSystemEnvelopeGroupActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeGroupActivity"})
+		activity.RegisterWithOptions(userAct.CreateSystemEnvelopeActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeActivity"})
+		activity.RegisterWithOptions(userAct.CreateDefaultAllocationActivity, activity.RegisterOptions{Name: "CreateDefaultAllocationActivity"})
+		activity.RegisterWithOptions(userAct.CreateUserTokenActivity, activity.RegisterOptions{Name: "CreateUserTokenActivity"})
 	})
 }
 
@@ -38,6 +45,7 @@ func RegisterWorkflows() {
 		workflow.RegisterWithOptions(workflows.CreateTransactionWorkflow, workflow.RegisterOptions{Name: "CreateTransactionWorkflow"})
 		workflow.RegisterWithOptions(workflows.CreateShortcutIntentWorkflow, workflow.RegisterOptions{Name: "CreateShortcutIntentWorkflow"})
 		workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
+		workflow.RegisterWithOptions(workflows.CreateUserWorkflow, workflow.RegisterOptions{Name: "CreateUserWorkflow"})
 	})
 
 }

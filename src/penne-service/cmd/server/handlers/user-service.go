@@ -5,9 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
+
+	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
 	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
+	"go.uber.org/cadence/client"
 	"go.uber.org/zap"
 )
 
@@ -19,9 +23,21 @@ type UserServiceHandler struct {
 	allocationRepo core.AllocationRepository
 	Logger         *zap.Logger
 	db             *sql.DB
+	cadenceClient  client.Client
+	repos          core.RepoContainer
 }
 
-func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.TokenRepository, logger *zap.Logger, envGroupRepo core.EnvelopeGroupRepository, envelopeRepo core.EnvelopeRepository, allocationRepo core.AllocationRepository, db *sql.DB) *UserServiceHandler {
+func NewUserServiceHandler(
+	userRepo core.UserRepository,
+	userTokenRepo core.TokenRepository,
+	logger *zap.Logger,
+	envGroupRepo core.EnvelopeGroupRepository,
+	envelopeRepo core.EnvelopeRepository,
+	allocationRepo core.AllocationRepository,
+	db *sql.DB,
+	cc client.Client,
+	repos core.RepoContainer,
+) *UserServiceHandler {
 	return &UserServiceHandler{
 		userRepo:       userRepo,
 		userTokenRepo:  userTokenRepo,
@@ -30,6 +46,8 @@ func NewUserServiceHandler(userRepo core.UserRepository, userTokenRepo core.Toke
 		allocationRepo: allocationRepo,
 		Logger:         logger,
 		db:             db,
+		cadenceClient:  cc,
+		repos:          repos,
 	}
 }
 
@@ -68,8 +86,48 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// create a transaction
+	type res struct {
+		UserAuthToken string `json:"user_auth_token"`
+	}
 
+	if h.cadenceClient != nil {
+		wfOptions := client.StartWorkflowOptions{
+			ID:                           uuid.NewString(),
+			TaskList:                     cadence.TaskListName,
+			ExecutionStartToCloseTimeout: 5 * time.Minute,
+		}
+		workflowRun, err := h.cadenceClient.ExecuteWorkflow(
+			r.Context(),
+			wfOptions,
+			"CreateUserWorkflow",
+			user,
+		)
+		if err != nil {
+			h.Logger.Error("Failed to start cadence workflow", zap.Error(err))
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
+			return
+		}
+
+		var workflowResult *core.CreateUserWorkflowResult
+		if err := workflowRun.Get(r.Context(), &workflowResult); err != nil {
+			h.Logger.Error("Workflow execution failed", zap.Error(err))
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
+			return
+		}
+
+		if workflowResult == nil {
+			h.Logger.Error("Workflow completed with no result")
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(res{UserAuthToken: workflowResult.UserAuthToken.String()})
+		return
+	}
+
+	// create a transaction
 	tx, err := h.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
@@ -166,10 +224,6 @@ func (h *UserServiceHandler) CreateUser(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to create token", http.StatusInternalServerError)
 		h.Logger.Error("Failed to create token", zap.Error(err))
 		return
-	}
-
-	type res struct {
-		UserAuthToken string `json:"user_auth_token"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
