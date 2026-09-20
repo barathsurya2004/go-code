@@ -31,7 +31,7 @@ func TestModule(t *testing.T) {
 }
 
 func TestNewRepoContainer(t *testing.T) {
-	container := NewRepoContainer(nil, nil, nil, nil, nil, nil, nil)
+	container := NewRepoContainer(nil, nil, nil, nil, nil, nil, nil, nil)
 	if container.Transaction != nil {
 		t.Error("expected nil Transaction")
 	}

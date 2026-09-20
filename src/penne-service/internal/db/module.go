@@ -16,6 +16,7 @@ var Module = fx.Module(
 	fx.Provide(NewPgEnvelopeRepo),
 	fx.Provide(NewPgAllocationRepo),
 	fx.Provide(NewPgShortcutIntentRepo),
+	fx.Provide(NewPgWishlistRepo),
 	fx.Provide(NewRepoContainer),
 )
 
@@ -27,6 +28,7 @@ func NewRepoContainer(
 	Envelope core.EnvelopeRepository,
 	Allocation core.AllocationRepository,
 	ShortcutIntent core.ShortcutIntentRepository,
+	Wishlist core.WishlistRepository,
 ) core.RepoContainer {
 	return core.RepoContainer{
 		Transaction:    Transaction,
@@ -36,5 +38,6 @@ func NewRepoContainer(
 		Envelope:       Envelope,
 		Allocation:     Allocation,
 		ShortcutIntent: ShortcutIntent,
+		Wishlist:       Wishlist,
 	}
 }

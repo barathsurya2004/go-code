@@ -45,18 +45,21 @@ type TransactionRepository interface {
 }
 
 type User struct {
-	UUID         uuid.UUID `json:"uuid"`
-	Name         string    `json:"name"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	UUID            uuid.UUID `json:"uuid"`
+	Name            string    `json:"name"`
+	Email           string    `json:"email"`
+	PasswordHash    string    `json:"password_hash"`
+	MonthlyBudgetE5 int64     `json:"monthly_budget_e5"`
+	SalaryDay       int       `json:"salary_day"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type UserRepository interface {
 	CreateUser(user *User, Tx *sql.Tx) (uuid.UUID, error)
 	GetUserByUUID(uuid uuid.UUID) (*User, error)
 	GetUserByEmail(email string) (*User, error)
+	UpdateBudgetSettings(userUUID uuid.UUID, monthlyBudgetE5 int64, salaryDay int, Tx *sql.Tx) error
 }
 
 type Token struct {
@@ -165,6 +168,7 @@ type RepoContainer struct {
 	Envelope       EnvelopeRepository
 	Allocation     AllocationRepository
 	ShortcutIntent ShortcutIntentRepository
+	Wishlist       WishlistRepository
 }
 
 type DashboardSummary struct {

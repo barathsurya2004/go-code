@@ -18,9 +18,10 @@ import (
 )
 
 type mockUserRepo struct {
-	createUserFn     func(user *core.User) (uuid.UUID, error)
-	getUserByUUIDFn  func(id uuid.UUID) (*core.User, error)
-	getUserByEmailFn func(email string) (*core.User, error)
+	createUserFn           func(user *core.User) (uuid.UUID, error)
+	getUserByUUIDFn        func(id uuid.UUID) (*core.User, error)
+	getUserByEmailFn       func(email string) (*core.User, error)
+	updateBudgetSettingsFn func(userUUID uuid.UUID, monthlyBudgetE5 int64, salaryDay int) error
 }
 
 func (m *mockUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) {
@@ -42,6 +43,13 @@ func (m *mockUserRepo) GetUserByEmail(email string) (*core.User, error) {
 		return m.getUserByEmailFn(email)
 	}
 	return nil, nil
+}
+
+func (m *mockUserRepo) UpdateBudgetSettings(userUUID uuid.UUID, monthlyBudgetE5 int64, salaryDay int, Tx *sql.Tx) error {
+	if m.updateBudgetSettingsFn != nil {
+		return m.updateBudgetSettingsFn(userUUID, monthlyBudgetE5, salaryDay)
+	}
+	return nil
 }
 
 type mockTokenRepo struct {
