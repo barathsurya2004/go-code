@@ -158,6 +158,66 @@ func TestWishlistActivities(t *testing.T) {
 		}
 	})
 
+	t.Run("CalculateWishlistForecastActivity - User Error", func(t *testing.T) {
+		userWithBudget := &mockUserRepoWithBudget{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return nil, errors.New("user not found")
+			},
+		}
+		repos := core.RepoContainer{User: userWithBudget, Wishlist: &mockWishlistRepoForActivity{}}
+		acts := NewWishlistActivities(repos, db, logger)
+
+		_, err := acts.CalculateWishlistForecastActivity(ctx, userUUID)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("CalculateWishlistForecastActivity - Surplus Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("db error"))
+
+		userWithBudget := &mockUserRepoWithBudget{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 50000, SalaryDay: 1}, nil
+			},
+		}
+		repos := core.RepoContainer{User: userWithBudget, Wishlist: &mockWishlistRepoForActivity{}}
+		acts := NewWishlistActivities(repos, db, logger)
+
+		_, err := acts.CalculateWishlistForecastActivity(ctx, userUUID)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("CalculateWishlistForecastActivity - Items Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(20000)))
+
+		wishlistRepo := &mockWishlistRepoForActivity{
+			getItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return nil, errors.New("items fetch error")
+			},
+		}
+
+		userWithBudget := &mockUserRepoWithBudget{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 50000, SalaryDay: 1}, nil
+			},
+		}
+
+		repos := core.RepoContainer{User: userWithBudget, Wishlist: wishlistRepo}
+		acts := NewWishlistActivities(repos, db, logger)
+
+		_, err := acts.CalculateWishlistForecastActivity(ctx, userUUID)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
 	t.Run("ApplyWishlistSurplusActivity - Error", func(t *testing.T) {
 		mock.ExpectQuery("SELECT COALESCE").
 			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).

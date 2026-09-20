@@ -361,4 +361,50 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 			t.Errorf("expected 1 allocation, got %d", len(allocs))
 		}
 	})
+
+	t.Run("Query Failure Errors", func(t *testing.T) {
+		// Delete with nil ID
+		if err := repo.DeleteWishlistItem(uuid.Nil); err == nil {
+			t.Error("expected error for nil item ID")
+		}
+
+		// Delete query error
+		mock.ExpectExec("DELETE FROM wishlist_items").WithArgs(itemUUID).WillReturnError(sql.ErrConnDone)
+		if err := repo.DeleteWishlistItem(itemUUID); err == nil {
+			t.Error("expected error for delete failure")
+		}
+
+		// Update query error
+		mock.ExpectExec("UPDATE wishlist_items").WithArgs(
+			itemUUID, "Title", int64(100), int64(0), 3, 3, "purchase", "active", nil, "", sqlmock.AnyArg(),
+		).WillReturnError(sql.ErrConnDone)
+		if err := repo.UpdateWishlistItem(&core.WishlistItem{ID: itemUUID, Title: "Title", TargetAmountE5: 100, Priority: 3, Urgency: 3}, nil); err == nil {
+			t.Error("expected error for update failure")
+		}
+
+		// GetWishlistItems query error
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_items WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnError(sql.ErrConnDone)
+		if _, err := repo.GetWishlistItemsByUserUUID(userUUID); err == nil {
+			t.Error("expected error for query failure")
+		}
+
+		// GetActiveWishlistItems query error
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_items WHERE user_uuid = \\$1 AND status = 'active'").WithArgs(userUUID).WillReturnError(sql.ErrConnDone)
+		if _, err := repo.GetActiveWishlistItemsByUserUUID(userUUID); err == nil {
+			t.Error("expected error for query failure")
+		}
+
+		// GetWishlistAllocationsByItemID query error
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE wishlist_item_id = \\$1").WithArgs(itemUUID).WillReturnError(sql.ErrConnDone)
+		if _, err := repo.GetWishlistAllocationsByItemID(itemUUID); err == nil {
+			t.Error("expected error for query failure")
+		}
+
+		// GetWishlistAllocationsByUserUUID query error
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnError(sql.ErrConnDone)
+		if _, err := repo.GetWishlistAllocationsByUserUUID(userUUID); err == nil {
+			t.Error("expected error for query failure")
+		}
+	})
 }
+

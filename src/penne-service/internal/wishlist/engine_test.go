@@ -428,4 +428,310 @@ func TestWishlistEngine_ApplySurplusDistribution(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+
+	t.Run("ApplySurplusDistribution - Error Cases", func(t *testing.T) {
+		repos := core.RepoContainer{User: userRepo, Wishlist: &mockWishlistRepo{}}
+		engine := NewWishlistEngine(repos, db, zap.NewNop())
+
+		// Nil UUID
+		if _, err := engine.ApplySurplusDistribution(ctx, uuid.Nil, asOf); err == nil {
+			t.Error("expected error for nil user UUID")
+		}
+
+		// CalculateCycleSurplus error
+		errUserRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return nil, errors.New("user not found")
+			},
+		}
+		errEngine := NewWishlistEngine(core.RepoContainer{User: errUserRepo, Wishlist: &mockWishlistRepo{}}, db, zap.NewNop())
+		if _, err := errEngine.ApplySurplusDistribution(ctx, userUUID, asOf); err == nil {
+			t.Error("expected error for cycle surplus failure")
+		}
+
+		// GetActiveWishlistItems error
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(50000)))
+		errWishlistRepo := &mockWishlistRepo{
+			getActiveItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return nil, errors.New("db error")
+			},
+		}
+		activeErrEngine := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: errWishlistRepo}, db, zap.NewNop())
+		if _, err := activeErrEngine.ApplySurplusDistribution(ctx, userUUID, asOf); err == nil {
+			t.Error("expected error for get active items error")
+		}
+
+		// GetWishlistItemByID error inside transaction
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(50000)))
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		itemGetErrRepo := &mockWishlistRepo{
+			getActiveItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return []*core.WishlistItem{item}, nil
+			},
+			createAllocationFn: func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.New(), nil
+			},
+			getItemFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return nil, errors.New("get item failed")
+			},
+		}
+		itemErrEngine := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: itemGetErrRepo}, db, zap.NewNop())
+		if _, err := itemErrEngine.ApplySurplusDistribution(ctx, userUUID, asOf); err == nil {
+			t.Error("expected error for get item by id failure")
+		}
+
+		// UpdateWishlistItem error inside transaction
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(50000)))
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		updateErrRepo := &mockWishlistRepo{
+			getActiveItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return []*core.WishlistItem{item}, nil
+			},
+			createAllocationFn: func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.New(), nil
+			},
+			getItemFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return item, nil
+			},
+			updateItemFn: func(updated *core.WishlistItem, tx *sql.Tx) error {
+				return errors.New("update item failed")
+			},
+		}
+		updateErrEngine := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: updateErrRepo}, db, zap.NewNop())
+		if _, err := updateErrEngine.ApplySurplusDistribution(ctx, userUUID, asOf); err == nil {
+			t.Error("expected error for update item failure")
+		}
+	})
 }
+
+func TestWishlistEngine_CalculateCycleSurplus_Errors(t *testing.T) {
+	ctx := context.Background()
+	userUUID := uuid.New()
+	asOf := time.Now()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected sqlmock error: %v", err)
+	}
+	defer db.Close()
+
+	t.Run("Nil User UUID", func(t *testing.T) {
+		engine := NewWishlistEngine(core.RepoContainer{}, db, zap.NewNop())
+		_, _, _, _, _, err := engine.CalculateCycleSurplus(ctx, uuid.Nil, asOf)
+		if err == nil {
+			t.Error("expected error for nil user UUID")
+		}
+	})
+
+	t.Run("User Fetch Error", func(t *testing.T) {
+		userRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return nil, errors.New("user not found")
+			},
+		}
+		engine := NewWishlistEngine(core.RepoContainer{User: userRepo}, db, zap.NewNop())
+		_, _, _, _, _, err := engine.CalculateCycleSurplus(ctx, userUUID, asOf)
+		if err == nil {
+			t.Error("expected error when user fetch fails")
+		}
+	})
+
+	t.Run("DB Query Error", func(t *testing.T) {
+		userRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 10000000, SalaryDay: 1}, nil
+			},
+		}
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("db error"))
+
+		engine := NewWishlistEngine(core.RepoContainer{User: userRepo}, db, zap.NewNop())
+		_, _, _, _, _, err := engine.CalculateCycleSurplus(ctx, userUUID, asOf)
+		if err == nil {
+			t.Error("expected error when db query fails")
+		}
+	})
+
+	t.Run("Expenses Exceed Budget (Negative Surplus Clamped)", func(t *testing.T) {
+		userRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 10000000, SalaryDay: 1}, nil
+			},
+		}
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(15000000)))
+
+		engine := NewWishlistEngine(core.RepoContainer{User: userRepo}, db, zap.NewNop())
+		budget, expenses, surplus, _, _, err := engine.CalculateCycleSurplus(ctx, userUUID, asOf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if budget != 10000000 || expenses != 15000000 || surplus != 0 {
+			t.Errorf("expected clamped surplus 0, got %d", surplus)
+		}
+	})
+}
+
+func TestWishlistEngine_SimulateDistribution_EdgeCases(t *testing.T) {
+	engine := NewWishlistEngine(core.RepoContainer{}, nil, zap.NewNop())
+
+	t.Run("Non-active Items Skipped", func(t *testing.T) {
+		items := []*core.WishlistItem{
+			{ID: uuid.New(), Title: "Fulfilled Item", TargetAmountE5: 1000, SavedAmountE5: 1000, Status: "fulfilled"},
+			{ID: uuid.New(), Title: "Active Item", TargetAmountE5: 1000, SavedAmountE5: 0, Priority: 0, Urgency: 0, Status: "active"},
+		}
+		results := engine.SimulateDistribution(items, 500)
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+		if results[0].AllocatedE5 != 0 {
+			t.Errorf("expected 0 allocated for fulfilled item, got %d", results[0].AllocatedE5)
+		}
+		if results[1].AllocatedE5 != 500 {
+			t.Errorf("expected 500 allocated for active item, got %d", results[1].AllocatedE5)
+		}
+	})
+
+	t.Run("Empty Items or Zero Surplus", func(t *testing.T) {
+		res1 := engine.SimulateDistribution(nil, 1000)
+		if len(res1) != 0 {
+			t.Errorf("expected empty results for nil items")
+		}
+		res2 := engine.SimulateDistribution([]*core.WishlistItem{}, 0)
+		if len(res2) != 0 {
+			t.Errorf("expected empty results for 0 surplus")
+		}
+	})
+}
+
+func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
+	engine := NewWishlistEngine(core.RepoContainer{}, nil, zap.NewNop())
+	now := time.Now()
+
+	t.Run("Zero or Negative Monthly Surplus", func(t *testing.T) {
+		items := []*core.WishlistItem{
+			{ID: uuid.New(), Title: "Item 1", TargetAmountE5: 10000, SavedAmountE5: 2000, Priority: 3, Urgency: 3, Status: "active"},
+		}
+		summary := engine.CalculateForecasts(items, 50000, 60000, now, 1)
+		if summary.ProjectedSurplusE5 != 0 {
+			t.Errorf("expected 0 projected surplus, got %d", summary.ProjectedSurplusE5)
+		}
+		if len(summary.Items) != 1 || summary.Items[0].EstimatedMonths != -1 {
+			t.Errorf("expected -1 estimated months for zero surplus, got %+v", summary.Items[0])
+		}
+	})
+
+	t.Run("Already Fulfilled Item in Forecast", func(t *testing.T) {
+		items := []*core.WishlistItem{
+			{ID: uuid.New(), Title: "Done Item", TargetAmountE5: 10000, SavedAmountE5: 15000, Priority: 0, Urgency: 0, Status: "fulfilled"},
+		}
+		summary := engine.CalculateForecasts(items, 50000, 20000, now, 1)
+		if len(summary.Items) != 1 || summary.Items[0].EstimatedMonths != 0 || summary.Items[0].ProgressPercentage != 100.0 {
+			t.Errorf("expected 0 estimated months and 100%% progress for over-fulfilled item, got %+v", summary.Items[0])
+		}
+	})
+
+	t.Run("Salary Day Greater than 28 Capped", func(t *testing.T) {
+		start, end := engine.GetCycleDateRange(31, time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC))
+		if start.Day() != 28 {
+			t.Errorf("expected salary day capped at 28, got %d", start.Day())
+		}
+		_ = end
+	})
+
+	t.Run("SimulateDistribution - Round Remainder Allocation", func(t *testing.T) {
+		items := []*core.WishlistItem{
+			{ID: uuid.New(), Title: "Item 1", TargetAmountE5: 100, SavedAmountE5: 0, Priority: 1, Urgency: 1, Status: "active"},
+			{ID: uuid.New(), Title: "Item 2", TargetAmountE5: 100, SavedAmountE5: 0, Priority: 100, Urgency: 100, Status: "active"},
+		}
+		// Surplus 1: share for item 1 is 0, so allocatedInRound == 0 remainder logic fires
+		res := engine.SimulateDistribution(items, 1)
+		if len(res) != 2 {
+			t.Fatalf("expected 2 results")
+		}
+	})
+
+	t.Run("ApplySurplusDistribution - BeginTx Error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+
+		userUUID := uuid.New()
+		userRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 50000, SalaryDay: 1}, nil
+			},
+		}
+		wishlistRepo := &mockWishlistRepo{
+			getActiveItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return []*core.WishlistItem{
+					{ID: uuid.New(), Title: "Item", TargetAmountE5: 1000, SavedAmountE5: 0, Priority: 3, Urgency: 3, Status: "active"},
+				}, nil
+			},
+		}
+
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(10000)))
+		mock.ExpectBegin().WillReturnError(errors.New("begin tx failed"))
+
+		eng := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: wishlistRepo}, db, zap.NewNop())
+		if _, err := eng.ApplySurplusDistribution(context.Background(), userUUID, time.Now()); err == nil {
+			t.Error("expected error for begin tx failure")
+		}
+	})
+
+	t.Run("ApplySurplusDistribution - Commit Error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+
+		userUUID := uuid.New()
+		userRepo := &mockUserRepo{
+			getUserByUUIDFn: func(id uuid.UUID) (*core.User, error) {
+				return &core.User{UUID: userUUID, MonthlyBudgetE5: 50000, SalaryDay: 1}, nil
+			},
+		}
+		item := &core.WishlistItem{ID: uuid.New(), Title: "Item", TargetAmountE5: 1000, SavedAmountE5: 0, Priority: 3, Urgency: 3, Status: "active"}
+		wishlistRepo := &mockWishlistRepo{
+			getActiveItemsFn: func(u uuid.UUID) ([]*core.WishlistItem, error) {
+				return []*core.WishlistItem{item}, nil
+			},
+			createAllocationFn: func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.New(), nil
+			},
+			getItemFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return item, nil
+			},
+			updateItemFn: func(updated *core.WishlistItem, tx *sql.Tx) error {
+				return nil
+			},
+		}
+
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(10000)))
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+
+		eng := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: wishlistRepo}, db, zap.NewNop())
+		if _, err := eng.ApplySurplusDistribution(context.Background(), userUUID, time.Now()); err == nil {
+			t.Error("expected error for commit failure")
+		}
+	})
+}
+
