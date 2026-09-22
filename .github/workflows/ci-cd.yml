@@ -69,10 +69,10 @@ jobs:
       - name: Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.TABLET_IP }}
-          username: ${{ secrets.TABLET_USER }}
-          key: ${{ secrets.TABLET_SSH_KEY }}
+          host: ${{ secrets.LAPTOP_IP }}
+          username: ${{ secrets.LAPTOP_USER }}
+          key: ${{ secrets.LAPTOP_SSH_KEY }}
           port: 22
           script: |
-            ~/deploy.sh penne-service
-            ~/deploy.sh cadence-penne-service
+            ~/Codes/deploy.sh penne-service
+            ~/Codes/deploy.sh cadence-penne-service
