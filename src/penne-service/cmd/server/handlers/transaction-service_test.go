@@ -863,3 +863,138 @@ func TestTransactionServiceHandler_ChangeTransactionToTransfer(t *testing.T) {
 		}
 	})
 }
+
+func TestTransactionServiceHandler_ProcessEmailTransaction(t *testing.T) {
+	logger := zap.NewNop()
+	db, _, _ := sqlmock.New()
+	defer db.Close()
+
+	validUserUUID := uuid.New()
+	createdTxnID := uuid.New()
+
+	t.Run("Success Bank Account Email", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				if txn.AmountE5 != 1000000 {
+					t.Errorf("expected amount_e5 1000000, got %d", txn.AmountE5)
+				}
+				if txn.PaymentMethod != "bank_account" {
+					t.Errorf("expected payment_method bank_account, got %s", txn.PaymentMethod)
+				}
+				if txn.Type != core.TxnTypeDebit {
+					t.Errorf("expected type debit, got %s", txn.Type)
+				}
+				return createdTxnID, nil
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"user_id": validUserUUID.String(),
+			"subject": "Debit Alert",
+			"body": `Dear Mr. Barath Surya M,
+Greetings from IDFC FIRST Bank.
+Your A/C XXXXXXX2559 has been debited by INR 10.00 on 22/09/2026 16:08. New balance is INR 33,918.42CR.`,
+			"email_date": "2026-09-22T16:08:00Z",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("Success Credit Card Email", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				if txn.AmountE5 != 117150000 {
+					t.Errorf("expected amount_e5 117150000, got %d", txn.AmountE5)
+				}
+				if txn.PaymentMethod != "bank_card" {
+					t.Errorf("expected payment_method bank_card, got %s", txn.PaymentMethod)
+				}
+				if txn.Type != core.TxnTypeDebit {
+					t.Errorf("expected type debit, got %s", txn.Type)
+				}
+				return createdTxnID, nil
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"subject": "Credit Card Spend",
+			"body": `Dear Cardmember,
+All Stocked Up! INR 1171.50 spent on your IDFC FIRST BANK Credit Card ending XX1110 at AVENUE SUPERMARTS LI on 22 SEP 2026.
+Available Limit: INR 38413.57 .`,
+			"email_date": "2026-09-22T12:00:00Z",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("Invalid Email Body", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"user_id": validUserUUID.String(),
+			"subject": "Spam",
+			"body":    "Congratulations, you won a lottery!",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("Missing User UUID", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"subject": "Alert",
+			"body":    "Your A/C XXXXXXX2559 has been debited by INR 10.00",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("Invalid Payload JSON", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer([]byte("{invalid-json")))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+}
+

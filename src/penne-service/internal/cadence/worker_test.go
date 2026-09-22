@@ -57,3 +57,96 @@ func TestStartWorker_WithServiceClient(t *testing.T) {
 	_ = lc.Start(ctx)
 	_ = lc.Stop(ctx)
 }
+
+func TestStartEmailWorker_NilClientError(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := NewCadenceConfig()
+	lc := fxtest.NewLifecycle(t)
+	_, err := StartEmailWorker(nil, cfg, logger, core.RepoContainer{}, nil, lc)
+	if err == nil {
+		t.Error("expected error when serviceClient is nil, got nil")
+	}
+}
+
+func TestStartEmailWorker_WithServiceClient(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := NewCadenceConfig()
+	var serviceClient workflowserviceclient.Interface
+
+	app := fx.New(
+		fx.Provide(
+			func() *CadenceConfig { return cfg },
+			func() *zap.Logger { return logger },
+			NewCadenceServiceClient,
+		),
+		fx.Populate(&serviceClient),
+	)
+
+	if err := app.Err(); err != nil {
+		t.Fatalf("failed to create serviceClient: %v", err)
+	}
+
+	lc := fxtest.NewLifecycle(t)
+	w, err := StartEmailWorker(serviceClient, cfg, logger, core.RepoContainer{}, nil, lc)
+	if err != nil {
+		t.Fatalf("expected no error creating email worker, got %v", err)
+	}
+	if w == nil {
+		t.Fatal("expected non-nil email worker")
+	}
+
+	ctx := context.Background()
+	_ = lc.Start(ctx)
+	_ = lc.Stop(ctx)
+}
+
+func TestStartWorker_NewWorkerError(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := &CadenceConfig{Domain: ""}
+	var serviceClient workflowserviceclient.Interface
+
+	app := fx.New(
+		fx.Provide(
+			func() *CadenceConfig { return NewCadenceConfig() },
+			func() *zap.Logger { return logger },
+			NewCadenceServiceClient,
+		),
+		fx.Populate(&serviceClient),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("failed to create serviceClient: %v", err)
+	}
+
+	lc := fxtest.NewLifecycle(t)
+	_, err := StartWorker(serviceClient, cfg, logger, core.RepoContainer{}, nil, lc)
+	if err == nil {
+		t.Error("expected error when domain is empty, got nil")
+	}
+}
+
+func TestStartEmailWorker_NewWorkerError(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := &CadenceConfig{Domain: ""}
+	var serviceClient workflowserviceclient.Interface
+
+	app := fx.New(
+		fx.Provide(
+			func() *CadenceConfig { return NewCadenceConfig() },
+			func() *zap.Logger { return logger },
+			NewCadenceServiceClient,
+		),
+		fx.Populate(&serviceClient),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("failed to create serviceClient: %v", err)
+	}
+
+	lc := fxtest.NewLifecycle(t)
+	_, err := StartEmailWorker(serviceClient, cfg, logger, core.RepoContainer{}, nil, lc)
+	if err == nil {
+		t.Error("expected error when domain is empty, got nil")
+	}
+}
+
+
+

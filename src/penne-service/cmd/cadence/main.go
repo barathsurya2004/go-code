@@ -7,15 +7,18 @@ import (
 	"go.uber.org/fx"
 )
 
-func main() {
-
-	app := fx.New(
+func buildApp(opts ...fx.Option) *fx.App {
+	baseOpts := []fx.Option{
 		pkg.Module,
 		db.Module,
 		cadence.Module,
-		fx.Invoke(cadence.StartWorker),
-	)
+		fx.Invoke(cadence.StartWorker, cadence.StartEmailWorker),
+	}
+	baseOpts = append(baseOpts, opts...)
+	return fx.New(baseOpts...)
+}
 
+func main() {
+	app := buildApp()
 	app.Run()
-
 }

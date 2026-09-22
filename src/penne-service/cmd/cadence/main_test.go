@@ -5,17 +5,11 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
-	"github.com/barathsurya2004/go-code/penne-service/internal/db"
-	"github.com/barathsurya2004/go-code/pkg"
 	"go.uber.org/fx"
 )
 
 func TestCadenceAppModule(t *testing.T) {
-	app := fx.New(
-		pkg.Module,
-		db.Module,
-		cadence.Module,
+	app := buildApp(
 		fx.Replace(func() (*sql.DB, error) {
 			dbMock, _, err := sqlmock.New()
 			return dbMock, err

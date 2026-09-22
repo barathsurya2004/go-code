@@ -1,0 +1,336 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>cadence: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/barathsurya2004/go-code/penne-service/internal/cadence/client.go (85.7%)</option>
+				
+				<option value="file1">github.com/barathsurya2004/go-code/penne-service/internal/cadence/worker.go (87.7%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package cadence
+
+import (
+        "context"
+
+        "go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+        "go.uber.org/cadence/client"
+        "go.uber.org/fx"
+        "go.uber.org/yarpc"
+        "go.uber.org/yarpc/transport/tchannel"
+        "go.uber.org/zap"
+)
+
+// Cadence system constants matching system configuration
+const (
+        Domain            = "penne-service-lifecycle-workers"
+        CadenceService    = "cadence-frontend"
+        CadenceHostPort   = "localhost:7933"
+        ClientServiceName = "penne-service-client"
+        WorkerServiceName = "penne-service"
+        TaskListName      = "penne-service-tasklist"
+        EmailTaskListName = "penne-service-email-tasklist"
+)
+
+// CadenceConfig holds configuration for the Cadence client connection.
+type CadenceConfig struct {
+        Domain         string
+        ServiceName    string
+        CadenceService string
+        HostPort       string
+}
+
+// NewCadenceConfig provides default configuration.
+func NewCadenceConfig() *CadenceConfig <span class="cov8" title="1">{
+        return &amp;CadenceConfig{
+                Domain:         Domain,
+                ServiceName:    ClientServiceName,
+                CadenceService: CadenceService,
+                HostPort:       CadenceHostPort,
+        }
+}</span>
+
+// NewCadenceServiceClient creates the low-level YARPC RPC client interface for Cadence.
+func NewCadenceServiceClient(lc fx.Lifecycle, cfg *CadenceConfig, logger *zap.Logger) (workflowserviceclient.Interface, error) <span class="cov8" title="1">{
+        ch, err := tchannel.NewChannelTransport(tchannel.ServiceName(cfg.ServiceName))
+        if err != nil </span><span class="cov8" title="1">{
+                logger.Error("Failed to create TChannel transport for Cadence client", zap.Error(err))
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">dispatcher := yarpc.NewDispatcher(yarpc.Config{
+                Name: cfg.ServiceName,
+                Outbounds: yarpc.Outbounds{
+                        cfg.CadenceService: {Unary: ch.NewSingleOutbound(cfg.HostPort)},
+                },
+        })
+
+        if err := dispatcher.Start(); err != nil </span><span class="cov0" title="0">{
+                logger.Error("Failed to start YARPC dispatcher for Cadence client", zap.Error(err))
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">lc.Append(fx.Hook{
+                OnStop: func(ctx context.Context) error </span><span class="cov8" title="1">{
+                        logger.Info("Stopping YARPC dispatcher for Cadence client...")
+                        return dispatcher.Stop()
+                }</span>,
+        })
+
+        <span class="cov8" title="1">return workflowserviceclient.New(dispatcher.ClientConfig(cfg.CadenceService)), nil</span>
+}
+
+// NewCadenceClient initializes the high-level Cadence workflow client.
+func NewCadenceClient(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig) client.Client <span class="cov8" title="1">{
+        return client.NewClient(
+                serviceClient,
+                cfg.Domain,
+                &amp;client.Options{},
+        )
+}</span>
+
+// Module exports the Cadence dependency injection module for Uber Fx (used by HTTP server).
+var Module = fx.Module(
+        "cadence",
+        fx.Provide(
+                NewCadenceConfig,
+                NewCadenceServiceClient,
+                NewCadenceClient,
+        ),
+)
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package cadence
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "sync"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/cadence/activities"
+        "github.com/barathsurya2004/go-code/penne-service/internal/cadence/workflows"
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+        "go.uber.org/cadence/activity"
+        "go.uber.org/cadence/worker"
+        "go.uber.org/cadence/workflow"
+        "go.uber.org/fx"
+        "go.uber.org/zap"
+)
+
+var registerWorkflowOnce sync.Once
+var registerActivitiesOnce sync.Once
+
+// RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
+func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger) <span class="cov8" title="1">{
+        transactionAct := activities.NewTransactionActivities(repos, logger)
+        userAct := activities.NewUserActivities(repos, logger)
+        wishlistAct := activities.NewWishlistActivities(repos, db, logger)
+        emailAct := activities.NewEmailActivities(logger)
+        registerActivitiesOnce.Do(func() </span><span class="cov8" title="1">{
+                activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
+                activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
+                activity.RegisterWithOptions(transactionAct.UpdateShortcutIntentActivity, activity.RegisterOptions{Name: "UpdateShortcutIntentActivity"})
+                activity.RegisterWithOptions(transactionAct.PendingShortcutIntentActivity, activity.RegisterOptions{Name: "PendingShortcutIntentActivity"})
+                activity.RegisterWithOptions(transactionAct.CreateShortcutIntent, activity.RegisterOptions{Name: "CreateShortcutIntentActivity"})
+                activity.RegisterWithOptions(transactionAct.GetTransactionByTimeActivity, activity.RegisterOptions{Name: "GetTransactionByTimeActivity"})
+                activity.RegisterWithOptions(transactionAct.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
+
+                activity.RegisterWithOptions(userAct.CreateUserActivity, activity.RegisterOptions{Name: "CreateUserActivity"})
+                activity.RegisterWithOptions(userAct.CreateSystemEnvelopeGroupActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeGroupActivity"})
+                activity.RegisterWithOptions(userAct.CreateSystemEnvelopeActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeActivity"})
+                activity.RegisterWithOptions(userAct.CreateDefaultAllocationActivity, activity.RegisterOptions{Name: "CreateDefaultAllocationActivity"})
+                activity.RegisterWithOptions(userAct.CreateUserTokenActivity, activity.RegisterOptions{Name: "CreateUserTokenActivity"})
+
+                activity.RegisterWithOptions(wishlistAct.CalculateWishlistForecastActivity, activity.RegisterOptions{Name: "CalculateWishlistForecastActivity"})
+                activity.RegisterWithOptions(wishlistAct.ApplyWishlistSurplusActivity, activity.RegisterOptions{Name: "ApplyWishlistSurplusActivity"})
+
+                activity.RegisterWithOptions(emailAct.ParseEmailActivity, activity.RegisterOptions{Name: "ParseEmailActivity"})
+        }</span>)
+}
+
+func RegisterWorkflows() <span class="cov8" title="1">{
+        registerWorkflowOnce.Do(func() </span><span class="cov8" title="1">{
+                workflow.RegisterWithOptions(workflows.CreateTransactionWorkflow, workflow.RegisterOptions{Name: "CreateTransactionWorkflow"})
+                workflow.RegisterWithOptions(workflows.CreateShortcutIntentWorkflow, workflow.RegisterOptions{Name: "CreateShortcutIntentWorkflow"})
+                workflow.RegisterWithOptions(workflows.HelloWorldWorkflow, workflow.RegisterOptions{Name: "HelloWorldWorkflow"})
+                workflow.RegisterWithOptions(workflows.CreateUserWorkflow, workflow.RegisterOptions{Name: "CreateUserWorkflow"})
+                workflow.RegisterWithOptions(workflows.SettleWishlistWorkflow, workflow.RegisterOptions{Name: "SettleWishlistWorkflow"})
+                workflow.RegisterWithOptions(workflows.ProcessEmailWorkflow, workflow.RegisterOptions{Name: "ProcessEmailWorkflow"})
+        }</span>)
+
+}
+
+// StartWorker creates, registers, and starts a standalone Cadence worker instance.
+func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger, repos core.RepoContainer, db *sql.DB, lc fx.Lifecycle) (worker.Worker, error) <span class="cov8" title="1">{
+        if serviceClient == nil </span><span class="cov8" title="1">{
+                return nil, errors.New("serviceClient is required")
+        }</span>
+
+        <span class="cov8" title="1">RegisterWorkflows()
+        RegisterActivities(repos, db, logger)
+
+        workerOptions := worker.Options{
+                Logger: logger,
+        }
+
+        w, err := worker.NewV2(serviceClient, cfg.Domain, TaskListName, workerOptions)
+        if err != nil </span><span class="cov0" title="0">{
+                logger.Error("Failed to create Cadence worker", zap.Error(err))
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">lc.Append(
+                fx.Hook{
+                        OnStart: func(ctx context.Context) error </span><span class="cov8" title="1">{
+                                if err := w.Start(); err != nil </span><span class="cov0" title="0">{
+                                        logger.Error("Failed to start Cadence worker", zap.Error(err))
+                                        return err
+                                }</span>
+                                <span class="cov8" title="1">return nil</span>
+                        },
+                        OnStop: func(ctx context.Context) error <span class="cov8" title="1">{
+                                w.Stop()
+                                logger.Info("Cadence worker stopped successfully", zap.String("domain", cfg.Domain), zap.String("task_list", TaskListName))
+                                return nil
+                        }</span>,
+                })
+
+        <span class="cov8" title="1">logger.Info("Cadence worker successfully started", zap.String("domain", cfg.Domain), zap.String("task_list", TaskListName))
+        return w, nil</span>
+}
+
+// StartEmailWorker creates, registers, and starts a standalone Cadence worker instance listening specifically on the email task list.
+func StartEmailWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger, repos core.RepoContainer, db *sql.DB, lc fx.Lifecycle) (worker.Worker, error) <span class="cov8" title="1">{
+        if serviceClient == nil </span><span class="cov8" title="1">{
+                return nil, errors.New("serviceClient is required")
+        }</span>
+
+        <span class="cov8" title="1">RegisterWorkflows()
+        RegisterActivities(repos, db, logger)
+
+        workerOptions := worker.Options{
+                Logger: logger,
+        }
+
+        w, err := worker.NewV2(serviceClient, cfg.Domain, EmailTaskListName, workerOptions)
+        if err != nil </span><span class="cov0" title="0">{
+                logger.Error("Failed to create Cadence email worker", zap.Error(err))
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">lc.Append(
+                fx.Hook{
+                        OnStart: func(ctx context.Context) error </span><span class="cov8" title="1">{
+                                if err := w.Start(); err != nil </span><span class="cov0" title="0">{
+                                        logger.Error("Failed to start Cadence email worker", zap.Error(err))
+                                        return err
+                                }</span>
+                                <span class="cov8" title="1">return nil</span>
+                        },
+                        OnStop: func(ctx context.Context) error <span class="cov8" title="1">{
+                                w.Stop()
+                                logger.Info("Cadence email worker stopped successfully", zap.String("domain", cfg.Domain), zap.String("task_list", EmailTaskListName))
+                                return nil
+                        }</span>,
+                })
+
+        <span class="cov8" title="1">logger.Info("Cadence email worker successfully started", zap.String("domain", cfg.Domain), zap.String("task_list", EmailTaskListName))
+        return w, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

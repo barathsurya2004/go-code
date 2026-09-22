@@ -81,3 +81,5 @@ func TestNewCadenceServiceClient_Error(t *testing.T) {
 		t.Error("expected error with empty service name, got nil")
 	}
 }
+
+

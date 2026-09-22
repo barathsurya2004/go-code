@@ -68,6 +68,8 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 
 	// transaction endpoints
 	mux.HandleFunc("/transaction", app.transactionHandler.CreateTransaction).Methods("POST")
+	mux.HandleFunc("/transaction/email", app.transactionHandler.ProcessEmailTransaction).Methods("POST")
+	mux.HandleFunc("/api/email/transaction", app.transactionHandler.ProcessEmailTransaction).Methods("POST")
 	mux.HandleFunc("/transaction", app.transactionHandler.GetTransactionByUUID).Methods("GET")
 	mux.HandleFunc("/transactions", app.transactionHandler.GetTransactionsByUserUUID).Methods("GET")
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")

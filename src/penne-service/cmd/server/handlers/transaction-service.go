@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
+	"github.com/barathsurya2004/go-code/penne-service/internal/cadence/workflows"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/emailparser"
 	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 	"go.uber.org/cadence/client"
@@ -370,3 +372,106 @@ func (h *TransactionServiceHandler) ChangeTransactionToTransfer(w http.ResponseW
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(txn)
 }
+
+type ProcessEmailRequest struct {
+	UserID    *uuid.UUID `json:"user_id,omitempty"`
+	Subject   string     `json:"subject"`
+	Body      string     `json:"body"`
+	EmailDate *time.Time `json:"email_date,omitempty"`
+}
+
+func (h *TransactionServiceHandler) ProcessEmailTransaction(w http.ResponseWriter, r *http.Request) {
+	var req ProcessEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		h.logger.Error("Failed to decode email transaction payload", zap.Error(err))
+		return
+	}
+
+	var userUUID uuid.UUID
+	if req.UserID != nil && *req.UserID != uuid.Nil {
+		userUUID = *req.UserID
+	} else {
+		var ok bool
+		userUUID, ok = getUserUUIDFromContextOrQuery(r)
+		if !ok {
+			http.Error(w, "Missing user UUID in request or authentication context", http.StatusBadRequest)
+			h.logger.Error("No user UUID found for email transaction")
+			return
+		}
+	}
+
+	emailDate := utils.NowUTC()
+	if req.EmailDate != nil && !req.EmailDate.IsZero() {
+		emailDate = req.EmailDate.UTC()
+	}
+
+	if h.cadenceClient != nil {
+		wfOptions := client.StartWorkflowOptions{
+			ID:                           uuid.NewString(),
+			TaskList:                     cadence.TaskListName,
+			ExecutionStartToCloseTimeout: 5 * time.Minute,
+		}
+		workflowRun, err := h.cadenceClient.ExecuteWorkflow(
+			r.Context(),
+			wfOptions,
+			"ProcessEmailWorkflow",
+			workflows.EmailTransactionInput{
+				UserID:    userUUID,
+				Subject:   req.Subject,
+				Body:      req.Body,
+				EmailDate: emailDate,
+			},
+		)
+
+		if err != nil {
+			h.logger.Error("Failed to start ProcessEmailWorkflow", zap.Error(err))
+			http.Error(w, "Failed to process email transaction", http.StatusInternalServerError)
+			return
+		}
+
+		var result workflows.ProcessEmailWorkflowResult
+		if err := workflowRun.Get(r.Context(), &result); err != nil {
+			h.logger.Error("ProcessEmailWorkflow execution failed", zap.Error(err))
+			http.Error(w, fmt.Sprintf("Failed to process email transaction: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	// Fallback when running without Cadence client
+	parsed, err := emailparser.ParseIDFCEmail(req.Subject, req.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	txn := core.Transaction{
+		UserID:        userUUID,
+		AmountE5:      parsed.AmountE5,
+		Type:          parsed.Type,
+		PaymentMethod: parsed.PaymentMethod,
+		CountryISO:    "IN",
+		CreatedAt:     emailDate,
+	}
+
+	txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, nil)
+	if err != nil {
+		http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+		return
+	}
+
+	res := workflows.ProcessEmailWorkflowResult{
+		TransactionID: *txnID,
+		ParsedDetails: *parsed,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(res)
+}
+

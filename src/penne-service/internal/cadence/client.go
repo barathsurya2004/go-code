@@ -19,6 +19,7 @@ const (
 	ClientServiceName = "penne-service-client"
 	WorkerServiceName = "penne-service"
 	TaskListName      = "penne-service-tasklist"
+	EmailTaskListName = "penne-service-email-tasklist"
 )
 
 // CadenceConfig holds configuration for the Cadence client connection.
