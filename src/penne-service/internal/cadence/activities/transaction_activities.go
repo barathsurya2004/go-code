@@ -82,3 +82,27 @@ func (a *TransactionActivities) UpdateTransactionActivity(ctx context.Context, t
 	}
 	return nil
 }
+
+func (a *TransactionActivities) GetTransactionByIDActivity(ctx context.Context, txnID uuid.UUID) (*core.Transaction, error) {
+	txn, err := a.Repos.Transaction.GetTransactionByUUID(txnID)
+	if err != nil {
+		a.logger.Error("Failed to get transaction by ID", zap.String("txn_id", txnID.String()), zap.Error(err))
+		return nil, err
+	}
+	return txn, nil
+}
+
+func (a *TransactionActivities) UpdateAllocationSpentActivity(ctx context.Context, envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64) error {
+	if a.Repos.Allocation == nil {
+		return nil
+	}
+	if err := a.Repos.Allocation.UpdateSpentAmount(envelopeID, targetDate, amountDeltaE5, nil); err != nil {
+		a.logger.Error("Failed to update allocation spent amount",
+			zap.String("envelope_id", envelopeID.String()),
+			zap.Int64("amount_delta", amountDeltaE5),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
+}

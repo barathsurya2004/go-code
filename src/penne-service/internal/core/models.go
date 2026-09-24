@@ -125,6 +125,7 @@ type Allocation struct {
 	ID                uuid.UUID  `json:"id"`
 	EnvelopeID        uuid.UUID  `json:"envelope_id"`
 	AllocatedAmountE5 float64    `json:"allocated_amount_e5"`
+	SpentAmountE5     int64      `json:"spent_amount_e5"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 	StartDate         *time.Time `json:"start_date,omitempty"`
@@ -138,6 +139,7 @@ type AllocationRepository interface {
 	GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*Allocation, error)
 	UpdateAllocation(allocation *Allocation) error
 	DeleteAllocation(id uuid.UUID) error
+	UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error
 }
 
 type ShortcutIntent struct {
@@ -189,5 +191,13 @@ type CreateUserWorkflowResult struct {
 type CreateSystemEnvelopeActivityInput struct {
 	UserUUID        uuid.UUID `json:"user_uuid"`
 	EnvelopeGroupID uuid.UUID `json:"envelope_group_id"`
+}
+
+type UpdateTransactionCategoryRequest struct {
+	TransactionID uuid.UUID  `json:"transaction_id"`
+	NewEnvelopeID *uuid.UUID `json:"new_envelope_id"`
+	AmountE5      int64      `json:"amount_e5,omitempty"`
+	TxnType       string     `json:"txn_type,omitempty"`
+	PaymentMethod string     `json:"payment_method,omitempty"`
 }
 

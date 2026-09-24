@@ -22,6 +22,7 @@ func buildApp(opts ...fx.Option) *fx.App {
 			NewHTTPServer,
 		),
 		fx.Invoke(
+			cadence.StartWorker,
 			RegisterRoutes,
 			func(s *http.Server) {},
 		),

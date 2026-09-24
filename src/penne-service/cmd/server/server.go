@@ -73,6 +73,8 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/transaction", app.transactionHandler.GetTransactionByUUID).Methods("GET")
 	mux.HandleFunc("/transactions", app.transactionHandler.GetTransactionsByUserUUID).Methods("GET")
 	mux.HandleFunc("/transaction", app.transactionHandler.UpdateTransaction).Methods("PUT")
+	mux.HandleFunc("/transaction/category", app.transactionHandler.UpdateTransactionCategory).Methods("POST", "PUT")
+	mux.HandleFunc("/api/transaction/category", app.transactionHandler.UpdateTransactionCategory).Methods("POST", "PUT")
 	mux.HandleFunc("/transaction", app.transactionHandler.DeleteTransaction).Methods("DELETE")
 	mux.HandleFunc("/transaction/transfer", app.transactionHandler.ChangeTransactionToTransfer).Methods("POST")
 

@@ -17,6 +17,7 @@ type mockTxnRepo struct {
 	createTxnFn        func(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error)
 	getTxnByTimeFn     func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 	updateTxnFn        func(txn *core.Transaction, Tx *sql.Tx) error
+	getTxnByUUIDFn     func(id uuid.UUID) (*core.Transaction, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -36,6 +37,25 @@ func (m *mockTxnRepo) GetTransactionByTime(time_lowerbound, time_upperbound time
 func (m *mockTxnRepo) UpdateTransaction(txn *core.Transaction, Tx *sql.Tx) error {
 	if m.updateTxnFn != nil {
 		return m.updateTxnFn(txn, Tx)
+	}
+	return nil
+}
+
+func (m *mockTxnRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
+	if m.getTxnByUUIDFn != nil {
+		return m.getTxnByUUIDFn(id)
+	}
+	return nil, nil
+}
+
+type mockAllocRepo struct {
+	core.AllocationRepository
+	updateSpentFn func(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error
+}
+
+func (m *mockAllocRepo) UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+	if m.updateSpentFn != nil {
+		return m.updateSpentFn(envelopeID, targetDate, amountDeltaE5, Tx)
 	}
 	return nil
 }
@@ -267,6 +287,86 @@ func TestTransactionActivities_UpdateTransactionActivity(t *testing.T) {
 	errUpdate := actsErr.UpdateTransactionActivity(context.Background(), core.Transaction{ID: uuid.New()})
 	if errUpdate == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestTransactionActivities_GetTransactionByIDActivity(t *testing.T) {
+	logger := zap.NewNop()
+	txnID := uuid.New()
+
+	// Success path
+	mockTxn := &mockTxnRepo{
+		getTxnByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id, AmountE5: 100000}, nil
+		},
+	}
+	acts := NewTransactionActivities(core.RepoContainer{Transaction: mockTxn}, logger)
+	txn, err := acts.GetTransactionByIDActivity(context.Background(), txnID)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if txn == nil || txn.ID != txnID {
+		t.Fatalf("expected transaction with id %v, got %v", txnID, txn)
+	}
+
+	// Error path
+	mockErr := &mockTxnRepo{
+		getTxnByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+			return nil, errors.New("not found")
+		},
+	}
+	actsErr := NewTransactionActivities(core.RepoContainer{Transaction: mockErr}, logger)
+	_, errNotFound := actsErr.GetTransactionByIDActivity(context.Background(), txnID)
+	if errNotFound == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestTransactionActivities_UpdateAllocationSpentActivity(t *testing.T) {
+	logger := zap.NewNop()
+	envID := uuid.New()
+	targetDate := time.Now().UTC()
+
+	// Success path
+	called := false
+	mockAlloc := &mockAllocRepo{
+		updateSpentFn: func(envelopeID uuid.UUID, date time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+			called = true
+			if envelopeID != envID {
+				t.Errorf("expected envID %v, got %v", envID, envelopeID)
+			}
+			if amountDeltaE5 != 50000 {
+				t.Errorf("expected delta 50000, got %d", amountDeltaE5)
+			}
+			return nil
+		},
+	}
+	acts := NewTransactionActivities(core.RepoContainer{Allocation: mockAlloc}, logger)
+	err := acts.UpdateAllocationSpentActivity(context.Background(), envID, targetDate, 50000)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !called {
+		t.Fatal("expected updateSpentFn to be called")
+	}
+
+	// Error path
+	mockErr := &mockAllocRepo{
+		updateSpentFn: func(envelopeID uuid.UUID, date time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+			return errors.New("db error")
+		},
+	}
+	actsErr := NewTransactionActivities(core.RepoContainer{Allocation: mockErr}, logger)
+	errUpdate := actsErr.UpdateAllocationSpentActivity(context.Background(), envID, targetDate, -50000)
+	if errUpdate == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Nil allocation repo path
+	actsNil := NewTransactionActivities(core.RepoContainer{Allocation: nil}, logger)
+	errNil := actsNil.UpdateAllocationSpentActivity(context.Background(), envID, targetDate, 50000)
+	if errNil != nil {
+		t.Fatalf("expected no error for nil repo, got %v", errNil)
 	}
 }
 

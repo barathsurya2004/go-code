@@ -178,3 +178,47 @@ func (s *UnitTestSuite) Test_CreateShortcutIntentWorkflow_NonZeroCreatedAt() {
 	s.NotNil(result)
 	s.Equal(intentID, result.ID)
 }
+
+func (s *UnitTestSuite) Test_CreateShortcutIntentWorkflow_WithMatchedDebitTransaction_UpdatesSpentAmount() {
+	env := s.NewTestWorkflowEnvironment()
+	logger := zap.NewNop()
+
+	acts := activities.NewTransactionActivities(core.RepoContainer{}, logger)
+	env.RegisterActivityWithOptions(acts.CreateShortcutIntent, activity.RegisterOptions{Name: "CreateShortcutIntentActivity"})
+	env.RegisterActivityWithOptions(acts.GetTransactionByTimeActivity, activity.RegisterOptions{Name: "GetTransactionByTimeActivity"})
+	env.RegisterActivityWithOptions(acts.UpdateAllocationSpentActivity, activity.RegisterOptions{Name: "UpdateAllocationSpentActivity"})
+	env.RegisterActivityWithOptions(acts.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
+	env.RegisterActivityWithOptions(acts.UpdateShortcutIntentActivity, activity.RegisterOptions{Name: "UpdateShortcutIntentActivity"})
+
+	intentID := uuid.New()
+	txnID := uuid.New()
+	oldEnvID := uuid.New()
+	newEnvID := uuid.New()
+	matchedTxn := &core.Transaction{
+		ID:         txnID,
+		EnvelopeID: &oldEnvID,
+		AmountE5:   750000,
+		Type:       "debit",
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	env.OnActivity("CreateShortcutIntentActivity", mock.Anything, mock.Anything).Return(&intentID, nil)
+	env.OnActivity("GetTransactionByTimeActivity", mock.Anything, mock.Anything, mock.Anything).Return(matchedTxn, nil)
+	env.OnActivity("UpdateAllocationSpentActivity", mock.Anything, oldEnvID, mock.Anything, int64(-750000)).Return(nil)
+	env.OnActivity("UpdateAllocationSpentActivity", mock.Anything, newEnvID, mock.Anything, int64(750000)).Return(nil)
+	env.OnActivity("UpdateTransactionActivity", mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity("UpdateShortcutIntentActivity", mock.Anything, mock.Anything).Return(&txnID, nil)
+
+	env.ExecuteWorkflow(CreateShortcutIntentWorkflow, core.ShortcutIntent{
+		EnvelopeID: &newEnvID,
+	})
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result *core.ShortcutIntent
+	s.NoError(env.GetWorkflowResult(&result))
+	s.NotNil(result)
+	s.Equal(intentID, result.ID)
+	s.Equal(core.StatusSettled, result.Status)
+}

@@ -119,6 +119,7 @@ type mockAllocationRepo struct {
 	getActiveByUserFn func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error)
 	updateFn          func(alloc *core.Allocation) error
 	deleteFn          func(id uuid.UUID) error
+	updateSpentFn     func(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error
 }
 
 func (m *mockAllocationRepo) CreateAllocation(alloc *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
@@ -159,6 +160,13 @@ func (m *mockAllocationRepo) UpdateAllocation(alloc *core.Allocation) error {
 func (m *mockAllocationRepo) DeleteAllocation(id uuid.UUID) error {
 	if m.deleteFn != nil {
 		return m.deleteFn(id)
+	}
+	return nil
+}
+
+func (m *mockAllocationRepo) UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+	if m.updateSpentFn != nil {
+		return m.updateSpentFn(envelopeID, targetDate, amountDeltaE5, Tx)
 	}
 	return nil
 }
@@ -797,6 +805,35 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateAllocation - With Envelope Cadence", func(t *testing.T) {
+		envID := uuid.New()
+		envRepo.getByIDFn = func(id uuid.UUID) (*core.Envelope, error) {
+			return &core.Envelope{
+				ID:       id,
+				Cadence:  "monthly",
+				IsSystem: false,
+			}, nil
+		}
+		allocRepo.createFn = func(alloc *core.Allocation) (uuid.UUID, error) {
+			if alloc.StartDate == nil || alloc.EndDate == nil {
+				t.Error("expected start and end date to be set")
+			}
+			return uuid.New(), nil
+		}
+
+		body, _ := json.Marshal(core.Allocation{
+			EnvelopeID:        envID,
+			AllocatedAmountE5: 50000,
+		})
+		req := httptest.NewRequest("POST", "/allocation", bytes.NewBuffer(body))
+		rr := httptest.NewRecorder()
+
+		handler.CreateAllocation(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
 	t.Run("CreateAllocation - Invalid Payload", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/allocation", bytes.NewBufferString("{invalid"))
 		rr := httptest.NewRecorder()
@@ -1291,6 +1328,50 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		}
 
 		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, nil, cc, core.RepoContainer{})
+		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries", "latitude": 12.97, "longitude": 77.59})
+		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
+		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)
+		rr := httptest.NewRecorder()
+
+		h.CreateNewShortcutIntent(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, rr.Code)
+		}
+	})
+
+	t.Run("CreateNewShortcutIntent - Fallback Direct Matching With Allocations", func(t *testing.T) {
+		validUserUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+		envID := uuid.New()
+		oldEnvID := uuid.New()
+		txnID := uuid.New()
+		intentID := uuid.New()
+
+		envRepo.getByNameFn = func(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			return envID, nil
+		}
+		shortcutIntentRepo.createFn = func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) {
+			return intentID, nil
+		}
+		shortcutIntentRepo.updateFn = func(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error {
+			return nil
+		}
+		txnRepo.getTransactionByTimeFn = func(low, high time.Time, Tx *sql.Tx) (*core.Transaction, error) {
+			return &core.Transaction{
+				ID:         txnID,
+				AmountE5:   50000,
+				Type:       "debit",
+				EnvelopeID: &oldEnvID,
+				CreatedAt:  time.Now().UTC(),
+			}, nil
+		}
+		txnRepo.updateTransactionFn = func(txn *core.Transaction) error {
+			return nil
+		}
+		allocRepo.updateSpentFn = func(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+			return nil
+		}
+
+		h := NewBudgetingServiceHandler(groupRepo, envRepo, allocRepo, txnRepo, shortcutIntentRepo, logger, nil, nil, core.RepoContainer{})
 		body, _ := json.Marshal(map[string]interface{}{"name": "Groceries", "latitude": 12.97, "longitude": 77.59})
 		req := httptest.NewRequest("POST", "/api/create-new-intent", bytes.NewBuffer(body))
 		ctx := context.WithValue(req.Context(), "user_uuid", validUserUUID)

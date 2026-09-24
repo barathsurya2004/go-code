@@ -505,6 +505,7 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 	type budgetCategory struct {
 		Name            string       `json:"name"`
 		AllocatedAmount float64      `json:"allocated_amount_e5"`
+		SpentAmount     int64        `json:"spent_amount_e5"`
 		IsSystem        bool         `json:"is_system"`
 		Currency        string       `json:"currency"`
 		Cadence         core.Cadence `json:"cadence"`
@@ -523,6 +524,7 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 		budgetCategories = append(budgetCategories, budgetCategory{
 			Name:            env.Name,
 			AllocatedAmount: allocation.AllocatedAmountE5,
+			SpentAmount:     allocation.SpentAmountE5,
 			IsSystem:        env.IsSystem,
 			Currency:        env.CountryISO,
 			Cadence:         env.Cadence,
@@ -605,6 +607,42 @@ func (h *BudgetingServiceHandler) CreateNewShortcutIntent(w http.ResponseWriter,
 				h.logger.Error("workflow Execution failed", zap.Error(err))
 			}
 		}
+	} else {
+		intentID, err := h.ShortcutIntentRepo.CreateShortcutIntent(shortcutIntent, nil)
+		if err != nil {
+			h.logger.Error("Failed to create shortcut intent", zap.Error(err))
+			http.Error(w, "Failed to create shortcut intent", http.StatusInternalServerError)
+			return
+		}
+		shortcutIntent.ID = intentID
+
+		lowTime := shortcutIntent.CreatedAt.Add(-10 * time.Minute).UTC()
+		highTime := shortcutIntent.CreatedAt.Add(5 * time.Minute).UTC()
+		matchingTxn, err := h.TransactionRepo.GetTransactionByTime(lowTime, highTime, nil)
+		if err == nil && matchingTxn != nil {
+			oldEnvID := matchingTxn.EnvelopeID
+			matchingTxn.EnvelopeID = shortcutIntent.EnvelopeID
+			matchingTxn.ShortcutIntentID = &shortcutIntent.ID
+
+			if matchingTxn.Type == "debit" && h.allocationRepo != nil {
+				targetDate := matchingTxn.CreatedAt
+				if targetDate.IsZero() {
+					targetDate = utils.NowUTC()
+				}
+				if oldEnvID != nil && (shortcutIntent.EnvelopeID == nil || *oldEnvID != *shortcutIntent.EnvelopeID) {
+					_ = h.allocationRepo.UpdateSpentAmount(*oldEnvID, targetDate, -matchingTxn.AmountE5, nil)
+				}
+				if shortcutIntent.EnvelopeID != nil && (oldEnvID == nil || *oldEnvID != *shortcutIntent.EnvelopeID) {
+					_ = h.allocationRepo.UpdateSpentAmount(*shortcutIntent.EnvelopeID, targetDate, matchingTxn.AmountE5, nil)
+				}
+			}
+
+			_ = h.TransactionRepo.UpdateTransaction(matchingTxn, nil)
+			shortcutIntent.Status = core.StatusSettled
+			shortcutIntent.TransactionID = &matchingTxn.ID
+			_ = h.ShortcutIntentRepo.UpdateShortcutIntent(shortcutIntent, nil)
+		}
+		resultIntent = shortcutIntent
 	}
 
 	respIntent := shortcutIntent

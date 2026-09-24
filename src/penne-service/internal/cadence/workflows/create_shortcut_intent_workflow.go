@@ -46,8 +46,26 @@ func CreateShortcutIntentWorkflow(ctx workflow.Context, shortcutIntent core.Shor
 	}
 
 	if matchingTxn != nil {
+		oldEnvelopeID := matchingTxn.EnvelopeID
+		newEnvelopeID := shortcutIntent.EnvelopeID
+
 		matchingTxn.EnvelopeID = shortcutIntent.EnvelopeID
 		matchingTxn.ShortcutIntentID = &shortcutIntent.ID
+
+		targetDate := matchingTxn.CreatedAt
+		if targetDate.IsZero() {
+			targetDate = utils.NowUTC()
+		}
+
+		if matchingTxn.Type == "debit" {
+			if oldEnvelopeID != nil && (newEnvelopeID == nil || *oldEnvelopeID != *newEnvelopeID) {
+				_ = workflow.ExecuteActivity(ctx, "UpdateAllocationSpentActivity", *oldEnvelopeID, targetDate, -matchingTxn.AmountE5).Get(ctx, nil)
+			}
+			if newEnvelopeID != nil && (oldEnvelopeID == nil || *oldEnvelopeID != *newEnvelopeID) {
+				_ = workflow.ExecuteActivity(ctx, "UpdateAllocationSpentActivity", *newEnvelopeID, targetDate, matchingTxn.AmountE5).Get(ctx, nil)
+			}
+		}
+
 		err = workflow.ExecuteActivity(ctx, "UpdateTransactionActivity", *matchingTxn).Get(ctx, nil)
 		if err != nil {
 			return nil, err

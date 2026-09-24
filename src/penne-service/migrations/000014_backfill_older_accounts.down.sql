@@ -1,0 +1,1 @@
+-- Reversal is not applicable as this migration fixes data anomalies and synchronizes existing accounts.

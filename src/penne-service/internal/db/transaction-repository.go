@@ -270,7 +270,8 @@ func (r *pgTransactionRowsRepo) GetTransactionByTime(time_lowerbound, time_upper
 	query := `
 		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
 		FROM transactionrows
-		WHERE created_at BETWEEN $1 AND $2 AND shortcut_intent_id IS NULL LIMIT 1
+		WHERE created_at BETWEEN $1 AND $2 AND shortcut_intent_id IS NULL
+		ORDER BY created_at DESC LIMIT 1
 	`
 	txn := &core.Transaction{}
 	var row *sql.Row

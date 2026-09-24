@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
@@ -20,6 +21,12 @@ func NewPgAllocationRepo(db *sql.DB) core.AllocationRepository {
 }
 
 func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
+	if allocation == nil {
+		return uuid.Nil, errors.New("allocation cannot be nil")
+	}
+	if allocation.EnvelopeID == uuid.Nil {
+		return uuid.Nil, errors.New("envelope_id is required")
+	}
 	now := utils.NowUTC()
 	if allocation.CreatedAt.IsZero() {
 		allocation.CreatedAt = now
@@ -28,7 +35,7 @@ func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql
 		allocation.UpdatedAt = now
 	}
 	checkQuery := `
-		SELECT id, envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date
+		SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
 		FROM allocation
 		WHERE envelope_id = $1
 		  AND ($2::date IS NULL OR $3::date IS NULL OR (start_date <= $3 AND end_date >= $2))
@@ -46,6 +53,7 @@ func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql
 		&existingAllocation.ID,
 		&existingAllocation.EnvelopeID,
 		&existingAllocation.AllocatedAmountE5,
+		&existingAllocation.SpentAmountE5,
 		&existingAllocation.CreatedAt,
 		&existingAllocation.UpdatedAt,
 		&existingAllocation.StartDate,
@@ -60,14 +68,14 @@ func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql
 	}
 
 	query := `
-		INSERT INTO allocation (envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date)
-		VALUES ($1, $2, COALESCE($3, NOW()), COALESCE($4, NOW()), $5, $6) RETURNING id
+		INSERT INTO allocation (envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date)
+		VALUES ($1, $2, $3, COALESCE($4, NOW()), COALESCE($5, NOW()), $6, $7) RETURNING id
 	`
 	var row *sql.Row
 	if Tx != nil {
-		row = Tx.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+		row = Tx.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
 	} else {
-		row = r.db.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+		row = r.db.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
 	}
 	if err := row.Scan(&allocation.ID); err != nil {
 		return uuid.Nil, err
@@ -77,18 +85,18 @@ func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql
 
 func (r *pgAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) {
 	query := `
-		SELECT id, envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date
+		SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
 		FROM allocation
 		WHERE id = $1
 	`
 	allocation := &core.Allocation{}
-	err := r.db.QueryRow(query, id).Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
+	err := r.db.QueryRow(query, id).Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.SpentAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
 	return allocation, err
 }
 
 func (r *pgAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*core.Allocation, error) {
 	query := `
-		SELECT id, envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date
+		SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
 		FROM allocation
 		WHERE envelope_id = $1
 	`
@@ -100,7 +108,7 @@ func (r *pgAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*
 	allocations := []*core.Allocation{}
 	for rows.Next() {
 		allocation := &core.Allocation{}
-		err := rows.Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
+		err := rows.Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.SpentAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +151,7 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 	}
 
 	query := `
-		SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date
+		SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.spent_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date
 		FROM allocation a
 		JOIN envelope e ON a.envelope_id = e.id
 		WHERE e.user_uuid = $1
@@ -162,7 +170,7 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 	allocations := []*core.Allocation{}
 	for rows.Next() {
 		allocation := &core.Allocation{}
-		err := rows.Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
+		err := rows.Scan(&allocation.ID, &allocation.EnvelopeID, &allocation.AllocatedAmountE5, &allocation.SpentAmountE5, &allocation.CreatedAt, &allocation.UpdatedAt, &allocation.StartDate, &allocation.EndDate)
 		if err != nil {
 			return nil, err
 		}
@@ -179,6 +187,7 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 		allocation := &core.Allocation{
 			EnvelopeID:        envelope.ID,
 			AllocatedAmountE5: envelope.TargetAmountE5,
+			SpentAmountE5:     0,
 			CreatedAt:         utils.NowUTC(),
 			UpdatedAt:         utils.NowUTC(),
 			StartDate:         &startDate,
@@ -199,15 +208,21 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 }
 
 func (r *pgAllocationRepo) UpdateAllocation(allocation *core.Allocation) error {
+	if allocation == nil {
+		return errors.New("allocation cannot be nil")
+	}
+	if allocation.ID == uuid.Nil {
+		return errors.New("id is required")
+	}
 	if allocation.UpdatedAt.IsZero() {
 		allocation.UpdatedAt = utils.NowUTC()
 	}
 	query := `
 		UPDATE allocation
-		SET envelope_id = $2, allocated_amount_e5 = $3, created_at = $4, updated_at = $5, start_date = $6, end_date = $7
+		SET envelope_id = $2, allocated_amount_e5 = $3, spent_amount_e5 = $4, created_at = $5, updated_at = $6, start_date = $7, end_date = $8
 		WHERE id = $1
 	`
-	_, err := r.db.Exec(query, allocation.ID, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+	_, err := r.db.Exec(query, allocation.ID, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
 	return err
 }
 
@@ -217,5 +232,69 @@ func (r *pgAllocationRepo) DeleteAllocation(id uuid.UUID) error {
 		WHERE id = $1
 	`
 	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *pgAllocationRepo) UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+	if targetDate.IsZero() {
+		targetDate = utils.NowUTC()
+	}
+
+	updateQuery := `
+		UPDATE allocation
+		SET spent_amount_e5 = GREATEST(0, spent_amount_e5 + $1),
+		    updated_at = NOW()
+		WHERE envelope_id = $2
+		  AND $3::date BETWEEN start_date AND end_date
+		RETURNING id
+	`
+	var updatedID uuid.UUID
+	var err error
+	if Tx != nil {
+		err = Tx.QueryRow(updateQuery, amountDeltaE5, envelopeID, targetDate).Scan(&updatedID)
+	} else {
+		err = r.db.QueryRow(updateQuery, amountDeltaE5, envelopeID, targetDate).Scan(&updatedID)
+	}
+	if err == nil {
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	// No active allocation found, query envelope to get cadence and target amount
+	envQuery := `SELECT cadence, target_amount_e5 FROM envelope WHERE id = $1`
+	var cadence core.Cadence
+	var targetAmountE5 float64
+	if Tx != nil {
+		err = Tx.QueryRow(envQuery, envelopeID).Scan(&cadence, &targetAmountE5)
+	} else {
+		err = r.db.QueryRow(envQuery, envelopeID).Scan(&cadence, &targetAmountE5)
+	}
+	if err != nil {
+		return err
+	}
+
+	startDate, endDate, err := utils.GetCadenceStartAndEndTime(cadence, targetDate)
+	if err != nil {
+		return err
+	}
+
+	var initialSpent int64
+	if amountDeltaE5 > 0 {
+		initialSpent = amountDeltaE5
+	}
+
+	newAlloc := &core.Allocation{
+		EnvelopeID:        envelopeID,
+		AllocatedAmountE5: targetAmountE5,
+		SpentAmountE5:     initialSpent,
+		StartDate:         &startDate,
+		EndDate:           &endDate,
+		CreatedAt:         utils.NowUTC(),
+		UpdatedAt:         utils.NowUTC(),
+	}
+
+	_, err = r.CreateAllocation(newAlloc, Tx)
 	return err
 }

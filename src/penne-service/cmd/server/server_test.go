@@ -146,6 +146,9 @@ func (d *dummyAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID,
 }
 func (d *dummyAllocationRepo) UpdateAllocation(a *core.Allocation) error { return nil }
 func (d *dummyAllocationRepo) DeleteAllocation(id uuid.UUID) error       { return nil }
+func (d *dummyAllocationRepo) UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+	return nil
+}
 
 type dummyWishlistRepo struct{}
 

@@ -69,6 +69,15 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 		}
 	}
 
-	return &txnID, nil
+	if txn.EnvelopeID != nil && txn.Type == "debit" {
+		_ = workflow.ExecuteActivity(
+			ctx,
+			"UpdateAllocationSpentActivity",
+			*txn.EnvelopeID,
+			txn.CreatedAt,
+			txn.AmountE5,
+		).Get(ctx, nil)
+	}
 
+	return &txnID, nil
 }

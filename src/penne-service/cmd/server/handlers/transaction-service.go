@@ -95,20 +95,15 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 				fmt.Println("workflow completed with nor result")
 			}
 		}
+	} else {
+		txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, nil)
+		if err != nil {
+			http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
+			h.logger.Error("Failed to create transaction", zap.Error(err))
+			return
+		}
+		resultUUID = txnID
 	}
-
-	// txnID, err := h.CreateTransactionWorkflow(&txn, userUUID, tx)
-	// if err != nil {
-	// 	http.Error(w, "Failed to create transaction", http.StatusInternalServerError)
-	// 	h.logger.Error("Failed to create transaction", zap.Error(err))
-	// 	return
-	// }
-
-	// if err := tx.Commit(); err != nil {
-	// 	http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
-	// 	h.logger.Error("Failed to commit transaction", zap.Error(err))
-	// 	return
-	// }
 
 	var respUUID uuid.UUID
 	if resultUUID != nil {
@@ -195,29 +190,130 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 }
 
 func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
-	var txn core.Transaction
-	if err := json.NewDecoder(r.Body).Decode(&txn); err != nil {
+	var req struct {
+		ID            uuid.UUID  `json:"id"`
+		UUID          uuid.UUID  `json:"uuid"`
+		EnvelopeID    *uuid.UUID `json:"envelope_id"`
+		AmountE5      int64      `json:"amount_e5"`
+		Type          string     `json:"txn_type"`
+		PaymentMethod string     `json:"payment_method"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Failed to decode transaction payload", zap.Error(err))
 		return
 	}
-	//get the existing transaction
-	txnToUpdate, err := h.transactionRepo.GetTransactionByUUID(txn.ID)
+	txnID := req.ID
+	if txnID == uuid.Nil {
+		txnID = req.UUID
+	}
+	h.handleUpdateTransaction(w, r, txnID, req.EnvelopeID, req.AmountE5, req.Type, req.PaymentMethod)
+}
+
+func (h *TransactionServiceHandler) UpdateTransactionCategory(w http.ResponseWriter, r *http.Request) {
+	var req core.UpdateTransactionCategoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		h.logger.Error("Failed to decode update transaction category payload", zap.Error(err))
+		return
+	}
+
+	if req.TransactionID == uuid.Nil {
+		http.Error(w, "Transaction ID is required", http.StatusBadRequest)
+		return
+	}
+
+	h.handleUpdateTransaction(w, r, req.TransactionID, req.NewEnvelopeID, req.AmountE5, req.TxnType, req.PaymentMethod)
+}
+
+func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWriter, r *http.Request, txnID uuid.UUID, envelopeID *uuid.UUID, amountE5 int64, txnType string, paymentMethod string) {
+	if txnID == uuid.Nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// get the existing transaction
+	txnToUpdate, err := h.transactionRepo.GetTransactionByUUID(txnID)
 	if err != nil {
 		http.Error(w, "Transaction not found", http.StatusNotFound)
-		h.logger.Error("Transaction not found", zap.String("uuid", txn.ID.String()), zap.Error(err))
+		h.logger.Error("Transaction not found", zap.String("uuid", txnID.String()), zap.Error(err))
+		return
+	}
+	if txnToUpdate == nil {
+		txnToUpdate = &core.Transaction{ID: txnID}
+	}
+
+	if h.cadenceClient != nil {
+		wfOptions := client.StartWorkflowOptions{
+			ID:                           "update-txn-category-" + uuid.NewString(),
+			TaskList:                     cadence.TaskListName,
+			ExecutionStartToCloseTimeout: 5 * time.Minute,
+		}
+		req := core.UpdateTransactionCategoryRequest{
+			TransactionID: txnID,
+			NewEnvelopeID: envelopeID,
+			AmountE5:      amountE5,
+			TxnType:       txnType,
+			PaymentMethod: paymentMethod,
+		}
+		workflowRun, err := h.cadenceClient.ExecuteWorkflow(
+			r.Context(),
+			wfOptions,
+			"UpdateTransactionCategoryWorkflow",
+			req,
+		)
+		if err != nil {
+			h.logger.Error("Failed to start UpdateTransactionCategoryWorkflow", zap.Error(err))
+			http.Error(w, "Failed to update transaction category", http.StatusInternalServerError)
+			return
+		}
+		if err := workflowRun.Get(r.Context(), nil); err != nil {
+			h.logger.Error("UpdateTransactionCategoryWorkflow execution failed", zap.Error(err))
+			http.Error(w, "Failed to update transaction category", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	newTxn := txnToUpdate
-	if txn.AmountE5 != 0 {
-		newTxn.AmountE5 = txn.AmountE5
+	if amountE5 != 0 {
+		newTxn.AmountE5 = amountE5
 	}
-	if txn.Type != "" {
-		newTxn.Type = txn.Type
+	if txnType != "" {
+		newTxn.Type = txnType
 	}
-	if txn.EnvelopeID != nil {
-		newTxn.EnvelopeID = txn.EnvelopeID
+	if paymentMethod != "" {
+		newTxn.PaymentMethod = paymentMethod
+	}
+	newTxn.EnvelopeID = envelopeID
+
+	if h.repos.Allocation != nil {
+		isCategoryChanged := false
+		if (txnToUpdate.EnvelopeID == nil && newTxn.EnvelopeID != nil) || (txnToUpdate.EnvelopeID != nil && newTxn.EnvelopeID == nil) {
+			isCategoryChanged = true
+		} else if txnToUpdate.EnvelopeID != nil && newTxn.EnvelopeID != nil && *txnToUpdate.EnvelopeID != *newTxn.EnvelopeID {
+			isCategoryChanged = true
+		}
+
+		targetDate := txnToUpdate.CreatedAt
+		if targetDate.IsZero() {
+			targetDate = time.Now().UTC()
+		}
+
+		if isCategoryChanged {
+			if txnToUpdate.EnvelopeID != nil && txnToUpdate.Type == "debit" {
+				_ = h.repos.Allocation.UpdateSpentAmount(*txnToUpdate.EnvelopeID, targetDate, -txnToUpdate.AmountE5, nil)
+			}
+			if newTxn.EnvelopeID != nil && newTxn.Type == "debit" {
+				_ = h.repos.Allocation.UpdateSpentAmount(*newTxn.EnvelopeID, targetDate, newTxn.AmountE5, nil)
+			}
+		} else if newTxn.EnvelopeID != nil && newTxn.Type == "debit" {
+			delta := newTxn.AmountE5 - txnToUpdate.AmountE5
+			if delta != 0 {
+				_ = h.repos.Allocation.UpdateSpentAmount(*newTxn.EnvelopeID, targetDate, delta, nil)
+			}
+		}
 	}
 
 	if err := h.transactionRepo.UpdateTransaction(newTxn, nil); err != nil {
@@ -238,6 +334,12 @@ func (h *TransactionServiceHandler) DeleteTransaction(w http.ResponseWriter, r *
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Invalid request payload")
 		return
+	}
+
+	// Refund spent amount if transaction was allocated and debit
+	existingTxn, _ := h.transactionRepo.GetTransactionByUUID(txnUUID)
+	if existingTxn != nil && existingTxn.EnvelopeID != nil && existingTxn.Type == "debit" && h.repos.Allocation != nil {
+		_ = h.repos.Allocation.UpdateSpentAmount(*existingTxn.EnvelopeID, existingTxn.CreatedAt, -existingTxn.AmountE5, nil)
 	}
 
 	if err := h.transactionRepo.DeleteTransaction(txnUUID); err != nil {
@@ -266,6 +368,7 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 	}
 	if pendingShortcutIntent != nil {
 		txn.ShortcutIntentID = &pendingShortcutIntent.ID
+		txn.EnvelopeID = pendingShortcutIntent.EnvelopeID
 		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
 		if err != nil {
 			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
@@ -277,12 +380,18 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
 			return nil, err
 		}
+		if txn.EnvelopeID != nil && txn.Type == "debit" && h.repos.Allocation != nil {
+			_ = h.repos.Allocation.UpdateSpentAmount(*txn.EnvelopeID, txn.CreatedAt, txn.AmountE5, Tx)
+		}
 		return &txnID, nil
 	} else {
 		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
 		if err != nil {
 			h.logger.Error("Failed to create transaction and workflow", zap.Error(err))
 			return nil, err
+		}
+		if txn.EnvelopeID != nil && txn.Type == "debit" && h.repos.Allocation != nil {
+			_ = h.repos.Allocation.UpdateSpentAmount(*txn.EnvelopeID, txn.CreatedAt, txn.AmountE5, Tx)
 		}
 		h.logger.Info("Waiting for the shortcut intent to trigger the attribution")
 		return &txnID, nil

@@ -34,6 +34,8 @@ func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger
 		activity.RegisterWithOptions(transactionAct.CreateShortcutIntent, activity.RegisterOptions{Name: "CreateShortcutIntentActivity"})
 		activity.RegisterWithOptions(transactionAct.GetTransactionByTimeActivity, activity.RegisterOptions{Name: "GetTransactionByTimeActivity"})
 		activity.RegisterWithOptions(transactionAct.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
+		activity.RegisterWithOptions(transactionAct.GetTransactionByIDActivity, activity.RegisterOptions{Name: "GetTransactionByIDActivity"})
+		activity.RegisterWithOptions(transactionAct.UpdateAllocationSpentActivity, activity.RegisterOptions{Name: "UpdateAllocationSpentActivity"})
 
 		activity.RegisterWithOptions(userAct.CreateUserActivity, activity.RegisterOptions{Name: "CreateUserActivity"})
 		activity.RegisterWithOptions(userAct.CreateSystemEnvelopeGroupActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeGroupActivity"})
@@ -56,6 +58,7 @@ func RegisterWorkflows() {
 		workflow.RegisterWithOptions(workflows.CreateUserWorkflow, workflow.RegisterOptions{Name: "CreateUserWorkflow"})
 		workflow.RegisterWithOptions(workflows.SettleWishlistWorkflow, workflow.RegisterOptions{Name: "SettleWishlistWorkflow"})
 		workflow.RegisterWithOptions(workflows.ProcessEmailWorkflow, workflow.RegisterOptions{Name: "ProcessEmailWorkflow"})
+		workflow.RegisterWithOptions(workflows.UpdateTransactionCategoryWorkflow, workflow.RegisterOptions{Name: "UpdateTransactionCategoryWorkflow"})
 	})
 
 }

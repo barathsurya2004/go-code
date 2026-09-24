@@ -462,6 +462,179 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateTransaction - Cadence Success", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{}, nil
+			},
+		}
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id}, nil
+		}
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":500}`, validUUID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.UpdateTransaction(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("UpdateTransaction - Cadence Execute Error", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return nil, errors.New("execute error")
+			},
+		}
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id}, nil
+		}
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":500}`, validUUID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.UpdateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("UpdateTransaction - Cadence WorkflowRun Get Error", func(t *testing.T) {
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return errors.New("get error")
+					},
+				}, nil
+			},
+		}
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id}, nil
+		}
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":500}`, validUUID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.UpdateTransaction(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("UpdateTransaction - Fallback Category Change and Delta Allocations", func(t *testing.T) {
+		oldEnvID := uuid.New()
+		newEnvID := uuid.New()
+		allocRepo := &mockAllocationRepo{
+			updateSpentFn: func(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+				return nil
+			},
+		}
+		fallbackHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, nil, core.RepoContainer{Allocation: allocRepo})
+
+		// 1. Category changed with old debit & new debit
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{
+				ID:         id,
+				EnvelopeID: &oldEnvID,
+				AmountE5:   1000,
+				Type:       "debit",
+				CreatedAt:  time.Now().UTC(),
+			}, nil
+		}
+		repo.updateTransactionFn = func(txn *core.Transaction) error {
+			return nil
+		}
+		body := fmt.Sprintf(`{"id":"%s","envelope_id":"%s","amount_e5":1200,"txn_type":"debit","payment_method":"card"}`, validUUID.String(), newEnvID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+		fallbackHandler.UpdateTransaction(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rr.Code)
+		}
+
+		// 2. Same category with amount delta change
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{
+				ID:         id,
+				EnvelopeID: &newEnvID,
+				AmountE5:   1000,
+				Type:       "debit",
+			}, nil
+		}
+		bodySame := fmt.Sprintf(`{"id":"%s","envelope_id":"%s","amount_e5":1500,"txn_type":"debit"}`, validUUID.String(), newEnvID.String())
+		reqSame := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(bodySame))
+		rrSame := httptest.NewRecorder()
+		fallbackHandler.UpdateTransaction(rrSame, reqSame)
+		if rrSame.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rrSame.Code)
+		}
+
+		// 3. Repo update error
+		repo.updateTransactionFn = func(txn *core.Transaction) error {
+			return errors.New("db update error")
+		}
+		reqErr := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(bodySame))
+		rrErr := httptest.NewRecorder()
+		fallbackHandler.UpdateTransaction(rrErr, reqErr)
+		if rrErr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", rrErr.Code)
+		}
+	})
+
+	t.Run("UpdateTransaction - Nil Transaction ID", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{}`))
+		rr := httptest.NewRecorder()
+		handler.UpdateTransaction(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UpdateTransactionCategory - Handler Tests", func(t *testing.T) {
+		// Invalid JSON
+		req1 := httptest.NewRequest("POST", "/transaction/category", bytes.NewBufferString("invalid json"))
+		rr1 := httptest.NewRecorder()
+		handler.UpdateTransactionCategory(rr1, req1)
+		if rr1.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr1.Code)
+		}
+
+		// Nil Transaction ID
+		req2 := httptest.NewRequest("POST", "/transaction/category", bytes.NewBufferString(`{}`))
+		rr2 := httptest.NewRecorder()
+		handler.UpdateTransactionCategory(rr2, req2)
+		if rr2.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr2.Code)
+		}
+
+		// Valid Request with Cadence Client
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{}, nil
+			},
+		}
+		repo.getTransactionByUUIDFn = func(id uuid.UUID) (*core.Transaction, error) {
+			return &core.Transaction{ID: id}, nil
+		}
+		cadenceHandler := NewTransactionServiceHandler(repo, shortcutIntentRepo, logger, db, cc, core.RepoContainer{})
+		envID := uuid.New()
+		body := fmt.Sprintf(`{"transaction_id":"%s","new_envelope_id":"%s"}`, validUUID.String(), envID.String())
+		req3 := httptest.NewRequest("POST", "/transaction/category", bytes.NewBufferString(body))
+		rr3 := httptest.NewRecorder()
+		cadenceHandler.UpdateTransactionCategory(rr3, req3)
+		if rr3.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr3.Code)
+		}
+	})
+
 	t.Run("DeleteTransaction - Missing or Invalid UUID", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/transaction", nil)
 		rr := httptest.NewRecorder()
@@ -996,5 +1169,89 @@ Available Limit: INR 38413.57 .`,
 			t.Errorf("expected status 400, got %d", rr.Code)
 		}
 	})
+
+	t.Run("ProcessEmailTransaction - Cadence Success", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return nil
+					},
+				}, nil
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, cc, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"user_id": validUserUUID.String(),
+			"subject": "Alert",
+			"body":    "Your A/C debited by INR 10.00",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected status 201, got %d", rr.Code)
+		}
+	})
+
+	t.Run("ProcessEmailTransaction - Cadence Execute Error", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return nil, errors.New("execute error")
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, cc, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"user_id": validUserUUID.String(),
+			"subject": "Alert",
+			"body":    "Your A/C debited by INR 10.00",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", rr.Code)
+		}
+	})
+
+	t.Run("ProcessEmailTransaction - Cadence Get Error", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{
+					getFn: func(ctx context.Context, valuePtr interface{}) error {
+						return errors.New("workflow error")
+					},
+				}, nil
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, cc, core.RepoContainer{})
+
+		body := map[string]interface{}{
+			"user_id": validUserUUID.String(),
+			"subject": "Alert",
+			"body":    "Your A/C debited by INR 10.00",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction/email", bytes.NewBuffer(jsonBytes))
+		rr := httptest.NewRecorder()
+
+		h.ProcessEmailTransaction(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
 }
+
 
