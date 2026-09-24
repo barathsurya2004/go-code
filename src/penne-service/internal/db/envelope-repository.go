@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -18,6 +19,13 @@ func NewPgEnvelopeRepo(db *sql.DB) core.EnvelopeRepository {
 }
 
 func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
+	now := utils.NowUTC()
+	if envelope.CreatedAt.IsZero() {
+		envelope.CreatedAt = now
+	}
+	if envelope.UpdatedAt.IsZero() {
+		envelope.UpdatedAt = now
+	}
 	query := `
 		INSERT INTO envelope (
 			user_uuid,
@@ -147,6 +155,9 @@ func (r *pgEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.U
 }
 
 func (r *pgEnvelopeRepo) UpdateEnvelope(envelope *core.Envelope) error {
+	if envelope.UpdatedAt.IsZero() {
+		envelope.UpdatedAt = utils.NowUTC()
+	}
 	query := `
 		UPDATE envelope
 		SET 

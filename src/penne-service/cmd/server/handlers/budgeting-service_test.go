@@ -1119,7 +1119,7 @@ func TestBudgetingServiceHandler_Allocation(t *testing.T) {
 		dbMock, mock, _ := sqlmock.New()
 		defer dbMock.Close()
 		mock.ExpectBegin()
-		mock.ExpectRollback()
+		mock.ExpectCommit()
 
 		allocRepo.getActiveByUserFn = func(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) {
 			return []*core.Allocation{{EnvelopeID: envID, AllocatedAmountE5: 5000}}, nil

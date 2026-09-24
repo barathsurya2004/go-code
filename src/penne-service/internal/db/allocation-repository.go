@@ -20,6 +20,13 @@ func NewPgAllocationRepo(db *sql.DB) core.AllocationRepository {
 }
 
 func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) {
+	now := utils.NowUTC()
+	if allocation.CreatedAt.IsZero() {
+		allocation.CreatedAt = now
+	}
+	if allocation.UpdatedAt.IsZero() {
+		allocation.UpdatedAt = now
+	}
 	checkQuery := `
 		SELECT id, envelope_id, allocated_amount_e5, created_at, updated_at, start_date, end_date
 		FROM allocation
@@ -192,6 +199,9 @@ func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, ta
 }
 
 func (r *pgAllocationRepo) UpdateAllocation(allocation *core.Allocation) error {
+	if allocation.UpdatedAt.IsZero() {
+		allocation.UpdatedAt = utils.NowUTC()
+	}
 	query := `
 		UPDATE allocation
 		SET envelope_id = $2, allocated_amount_e5 = $3, created_at = $4, updated_at = $5, start_date = $6, end_date = $7

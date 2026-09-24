@@ -204,6 +204,13 @@ func (h *BudgetingServiceHandler) CreateEnvelope(w http.ResponseWriter, r *http.
 	}
 
 	env.UserUUID = userUUID
+	now := utils.NowUTC()
+	if env.CreatedAt.IsZero() {
+		env.CreatedAt = now
+	}
+	if env.UpdatedAt.IsZero() {
+		env.UpdatedAt = now
+	}
 
 	envID, _ := h.envelopeRepo.GetEnvelopeIdByName(env.Name, userUUID, nil)
 	if envID != uuid.Nil {
@@ -288,6 +295,7 @@ func (h *BudgetingServiceHandler) UpdateEnvelope(w http.ResponseWriter, r *http.
 	}
 
 	env.UserUUID = userUUID
+	env.UpdatedAt = utils.NowUTC()
 
 	if err := h.envelopeRepo.UpdateEnvelope(&env); err != nil {
 		http.Error(w, "Failed to update envelope", http.StatusInternalServerError)
@@ -326,6 +334,33 @@ func (h *BudgetingServiceHandler) CreateAllocation(w http.ResponseWriter, r *htt
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		h.logger.Error("Failed to decode allocation payload", zap.Error(err))
 		return
+	}
+
+	now := utils.NowUTC()
+	if alloc.CreatedAt.IsZero() {
+		alloc.CreatedAt = now
+	}
+	if alloc.UpdatedAt.IsZero() {
+		alloc.UpdatedAt = now
+	}
+
+	if alloc.EnvelopeID != uuid.Nil {
+		env, err := h.envelopeRepo.GetEnvelopeByID(alloc.EnvelopeID)
+		if err == nil && env != nil {
+			if !env.IsSystem && env.Cadence != "forever" && env.Cadence != "" {
+				refDate := now
+				if alloc.StartDate != nil && !alloc.StartDate.IsZero() {
+					refDate = *alloc.StartDate
+				}
+				if alloc.StartDate == nil || alloc.EndDate == nil || alloc.EndDate.Sub(refDate) > 366*24*time.Hour {
+					startDate, endDate, err := utils.GetCadenceStartAndEndTime(env.Cadence, refDate)
+					if err == nil {
+						alloc.StartDate = &startDate
+						alloc.EndDate = &endDate
+					}
+				}
+			}
+		}
 	}
 
 	if _, err := h.allocationRepo.CreateAllocation(&alloc, nil); err != nil {
@@ -493,6 +528,12 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 			Cadence:         env.Cadence,
 			EnvelopeID:      env.ID,
 		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		h.logger.Error("Failed to commit transaction", zap.Error(err))
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
