@@ -265,3 +265,45 @@ func TestNowUTC(t *testing.T) {
 		t.Errorf("expected non-zero time")
 	}
 }
+
+func TestGetPreviousCadenceStartAndEndTime(t *testing.T) {
+	t.Run("Monthly Cadence (September -> August)", func(t *testing.T) {
+		target := time.Date(2026, time.September, 25, 14, 30, 0, 0, time.UTC)
+		prevStart, prevEnd, err := GetPreviousCadenceStartAndEndTime(core.MonthlyCadence, target)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expectedStart := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+		expectedEnd := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC).Add(-time.Nanosecond)
+		if !prevStart.Equal(expectedStart) {
+			t.Errorf("expected prevStart %v, got %v", expectedStart, prevStart)
+		}
+		if !prevEnd.Equal(expectedEnd) {
+			t.Errorf("expected prevEnd %v, got %v", expectedEnd, prevEnd)
+		}
+	})
+
+	t.Run("Monthly Cadence Year Boundary (January -> December)", func(t *testing.T) {
+		target := time.Date(2026, time.January, 15, 10, 0, 0, 0, time.UTC)
+		prevStart, prevEnd, err := GetPreviousCadenceStartAndEndTime(core.MonthlyCadence, target)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expectedStart := time.Date(2025, time.December, 1, 0, 0, 0, 0, time.UTC)
+		expectedEnd := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Add(-time.Nanosecond)
+		if !prevStart.Equal(expectedStart) {
+			t.Errorf("expected prevStart %v, got %v", expectedStart, prevStart)
+		}
+		if !prevEnd.Equal(expectedEnd) {
+			t.Errorf("expected prevEnd %v, got %v", expectedEnd, prevEnd)
+		}
+	})
+
+	t.Run("Invalid Cadence", func(t *testing.T) {
+		target := time.Date(2026, time.September, 25, 0, 0, 0, 0, time.UTC)
+		_, _, err := GetPreviousCadenceStartAndEndTime(core.Cadence("invalid"), target)
+		if err == nil {
+			t.Error("expected error for invalid cadence, got nil")
+		}
+	})
+}

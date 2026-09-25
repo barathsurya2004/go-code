@@ -430,7 +430,7 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 	t.Run("Query Error", func(t *testing.T) {
 		userUUID := uuid.New()
 		mock.ExpectQuery("SELECT").
-			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 			WillReturnError(errors.New("query error"))
 
 		_, err := repo.GetDashboardSummary(userUUID)
@@ -442,7 +442,7 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 	t.Run("ErrNoRows", func(t *testing.T) {
 		userUUID := uuid.New()
 		mock.ExpectQuery("SELECT").
-			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 			WillReturnError(sql.ErrNoRows)
 
 		summary, err := repo.GetDashboardSummary(userUUID)
@@ -456,11 +456,11 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 
 	t.Run("Zero Values (No Transactions Found via COALESCE)", func(t *testing.T) {
 		userUUID := uuid.New()
-		rows := sqlmock.NewRows([]string{"total_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5"}).
-			AddRow(0, 0, 0, 0)
+		rows := sqlmock.NewRows([]string{"prev_income_e5", "curr_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5", "fallback_budget_e5"}).
+			AddRow(0, 0, 0, 0, 0, 0)
 
 		mock.ExpectQuery("SELECT").
-			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 			WillReturnRows(rows)
 
 		summary, err := repo.GetDashboardSummary(userUUID)
@@ -472,21 +472,127 @@ func TestPgTransactionRowsRepo_GetDashboardSummary(t *testing.T) {
 		}
 	})
 
-	t.Run("Success", func(t *testing.T) {
+	t.Run("Standard Case: Last Month Income Powers Current Month Budget", func(t *testing.T) {
 		userUUID := uuid.New()
-		rows := sqlmock.NewRows([]string{"total_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5"}).
-			AddRow(10000, 4000, 3000, 1000)
+		// prev_income: 10000, curr_income (paycheck on 25th): 12000, total_expense: 4000, card: 3000, bank: 1000, fallback: 0
+		rows := sqlmock.NewRows([]string{"prev_income_e5", "curr_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5", "fallback_budget_e5"}).
+			AddRow(10000, 12000, 4000, 3000, 1000, 0)
 
 		mock.ExpectQuery("SELECT").
-			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 			WillReturnRows(rows)
 
 		summary, err := repo.GetDashboardSummary(userUUID)
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
-		if summary == nil || summary.TotalIncomeE5 != 10000 || summary.TotalExpenseE5 != 4000 || summary.CardSpentE5 != 3000 || summary.BankSpentE5 != 1000 {
-			t.Errorf("unexpected summary result: %+v", summary)
+		if summary == nil {
+			t.Fatalf("expected summary, got nil")
+		}
+		if summary.BaseIncomeE5 != 10000 {
+			t.Errorf("expected BaseIncomeE5 10000, got %d", summary.BaseIncomeE5)
+		}
+		if summary.BufferedIncomeE5 != 12000 {
+			t.Errorf("expected BufferedIncomeE5 12000, got %d", summary.BufferedIncomeE5)
+		}
+		if summary.BufferedUsedE5 != 0 {
+			t.Errorf("expected BufferedUsedE5 0, got %d", summary.BufferedUsedE5)
+		}
+		if summary.BufferedRemainingE5 != 12000 {
+			t.Errorf("expected BufferedRemainingE5 12000, got %d", summary.BufferedRemainingE5)
+		}
+		if summary.TotalExpenseE5 != 4000 {
+			t.Errorf("expected TotalExpenseE5 4000, got %d", summary.TotalExpenseE5)
+		}
+		if summary.TotalRemainingE5 != 6000 {
+			t.Errorf("expected TotalRemainingE5 6000, got %d", summary.TotalRemainingE5)
+		}
+		if summary.TotalIncomeE5 != 10000 {
+			t.Errorf("expected TotalIncomeE5 10000, got %d", summary.TotalIncomeE5)
+		}
+	})
+
+	t.Run("Edge Case: Expenses Exceed Last Month Income But Covered by Buffered Salary", func(t *testing.T) {
+		userUUID := uuid.New()
+		// prev_income: 10000, curr_income: 12000, total_expense: 11000 (1000 over prev_income), card: 8000, bank: 3000
+		rows := sqlmock.NewRows([]string{"prev_income_e5", "curr_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5", "fallback_budget_e5"}).
+			AddRow(10000, 12000, 11000, 8000, 3000, 0)
+
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(rows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if summary.BaseIncomeE5 != 10000 {
+			t.Errorf("expected BaseIncomeE5 10000, got %d", summary.BaseIncomeE5)
+		}
+		if summary.BufferedUsedE5 != 1000 {
+			t.Errorf("expected BufferedUsedE5 1000, got %d", summary.BufferedUsedE5)
+		}
+		if summary.BufferedRemainingE5 != 11000 {
+			t.Errorf("expected BufferedRemainingE5 11000, got %d", summary.BufferedRemainingE5)
+		}
+		if summary.TotalRemainingE5 != 0 {
+			t.Errorf("expected TotalRemainingE5 0, got %d", summary.TotalRemainingE5)
+		}
+		if summary.TotalIncomeE5 != 11000 {
+			t.Errorf("expected TotalIncomeE5 11000, got %d", summary.TotalIncomeE5)
+		}
+	})
+
+	t.Run("Edge Case: Catastrophic Overspend Exceeding Buffered Salary", func(t *testing.T) {
+		userUUID := uuid.New()
+		// prev_income: 10000, curr_income: 2000, total_expense: 15000, deficit: 5000, buffer covers 2000, uncovered: 3000
+		rows := sqlmock.NewRows([]string{"prev_income_e5", "curr_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5", "fallback_budget_e5"}).
+			AddRow(10000, 2000, 15000, 10000, 5000, 0)
+
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(rows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if summary.BufferedUsedE5 != 2000 {
+			t.Errorf("expected BufferedUsedE5 2000, got %d", summary.BufferedUsedE5)
+		}
+		if summary.BufferedRemainingE5 != 0 {
+			t.Errorf("expected BufferedRemainingE5 0, got %d", summary.BufferedRemainingE5)
+		}
+		if summary.TotalRemainingE5 != -3000 {
+			t.Errorf("expected TotalRemainingE5 -3000, got %d", summary.TotalRemainingE5)
+		}
+		if summary.TotalIncomeE5 != 12000 {
+			t.Errorf("expected TotalIncomeE5 12000, got %d", summary.TotalIncomeE5)
+		}
+	})
+
+	t.Run("Edge Case: New User Bootstrapping with Fallback Budget", func(t *testing.T) {
+		userUUID := uuid.New()
+		// prev_income: 0, curr_income: 0, total_expense: 2000, card: 1500, bank: 500, fallback_budget: 8000
+		rows := sqlmock.NewRows([]string{"prev_income_e5", "curr_income_e5", "total_expense_e5", "card_spent_e5", "bank_spent_e5", "fallback_budget_e5"}).
+			AddRow(0, 0, 2000, 1500, 500, 8000)
+
+		mock.ExpectQuery("SELECT").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(rows)
+
+		summary, err := repo.GetDashboardSummary(userUUID)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+		if summary.BaseIncomeE5 != 8000 {
+			t.Errorf("expected BaseIncomeE5 8000, got %d", summary.BaseIncomeE5)
+		}
+		if summary.TotalRemainingE5 != 6000 {
+			t.Errorf("expected TotalRemainingE5 6000, got %d", summary.TotalRemainingE5)
+		}
+		if summary.TotalIncomeE5 != 8000 {
+			t.Errorf("expected TotalIncomeE5 8000, got %d", summary.TotalIncomeE5)
 		}
 	})
 }

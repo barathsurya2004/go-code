@@ -56,6 +56,16 @@ func GetCadenceStartAndEndTime(cadence core.Cadence, targetDate time.Time) (time
 	}
 }
 
+// GetPreviousCadenceStartAndEndTime returns the start and end timestamps of the cadence period immediately preceding targetDate.
+func GetPreviousCadenceStartAndEndTime(cadence core.Cadence, targetDate time.Time) (time.Time, time.Time, error) {
+	currStart, _, err := GetCadenceStartAndEndTime(cadence, targetDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	prevTarget := currStart.Add(-time.Nanosecond)
+	return GetCadenceStartAndEndTime(cadence, prevTarget)
+}
+
 // NowUTC returns the current time in UTC location.
 func NowUTC() time.Time {
 	return time.Now().UTC()

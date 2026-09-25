@@ -342,30 +342,65 @@ func (r *pgTransactionRowsRepo) GetTransactionByAmountAndTime(userUUID uuid.UUID
 }
 
 func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) {
-	query := `
-		SELECT 
-    COALESCE(SUM(CASE WHEN txn_type = 'credit' THEN amount_e5 ELSE 0 END), 0) as total_income_e5,
-    COALESCE(SUM(CASE WHEN txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as total_expense_e5,
-    COALESCE(SUM(CASE WHEN payment_method = 'bank_card' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as card_spent_e5,
-    COALESCE(SUM(CASE WHEN payment_method = 'bank_account' AND txn_type = 'debit' THEN amount_e5 ELSE 0 END), 0) as bank_spent_e5
-FROM transactionrows
-WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
-
-	`
 	// validation checks
 	if userUUID == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}
-	timeStart, timeEnd, err := utils.GetCadenceStartAndEndTime("monthly", utils.NowUTC())
+
+	now := utils.NowUTC()
+	prevStart, prevEnd, err := utils.GetPreviousCadenceStartAndEndTime(core.MonthlyCadence, now)
 	if err != nil {
 		return nil, err
 	}
+	currStart, currEnd, err := utils.GetCadenceStartAndEndTime(core.MonthlyCadence, now)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT 
+			COALESCE((
+				SELECT SUM(amount_e5)
+				FROM transactionrows
+				WHERE user_id = $1 AND txn_type = 'credit' AND created_at BETWEEN $2 AND $3
+			), 0) as prev_income_e5,
+			COALESCE((
+				SELECT SUM(amount_e5)
+				FROM transactionrows
+				WHERE user_id = $1 AND txn_type = 'credit' AND created_at BETWEEN $4 AND $5
+			), 0) as curr_income_e5,
+			COALESCE((
+				SELECT SUM(amount_e5)
+				FROM transactionrows
+				WHERE user_id = $1 AND txn_type = 'debit' AND created_at BETWEEN $4 AND $5
+			), 0) as total_expense_e5,
+			COALESCE((
+				SELECT SUM(amount_e5)
+				FROM transactionrows
+				WHERE user_id = $1 AND txn_type = 'debit' AND payment_method = 'bank_card' AND created_at BETWEEN $4 AND $5
+			), 0) as card_spent_e5,
+			COALESCE((
+				SELECT SUM(amount_e5)
+				FROM transactionrows
+				WHERE user_id = $1 AND txn_type = 'debit' AND payment_method = 'bank_account' AND created_at BETWEEN $4 AND $5
+			), 0) as bank_spent_e5,
+			COALESCE((
+				SELECT monthly_budget_e5
+				FROM users
+				WHERE uuid = $1
+			), 0) as fallback_budget_e5
+	`
+
 	dashboardSummary := &core.DashboardSummary{}
-	err = r.db.QueryRowContext(context.Background(), query, userUUID, timeStart, timeEnd).Scan(
-		&dashboardSummary.TotalIncomeE5,
-		&dashboardSummary.TotalExpenseE5,
-		&dashboardSummary.CardSpentE5,
-		&dashboardSummary.BankSpentE5,
+	var prevIncomeE5, currIncomeE5, totalExpenseE5, cardSpentE5, bankSpentE5, fallbackBudgetE5 int64
+
+	err = r.db.QueryRowContext(context.Background(), query, userUUID, prevStart, prevEnd, currStart, currEnd).Scan(
+		&prevIncomeE5,
+		&currIncomeE5,
+		&totalExpenseE5,
+		&cardSpentE5,
+		&bankSpentE5,
+		&fallbackBudgetE5,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -373,5 +408,43 @@ WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
 		}
 		return nil, err
 	}
+
+	baseIncomeE5 := prevIncomeE5
+	if baseIncomeE5 == 0 && fallbackBudgetE5 > 0 {
+		baseIncomeE5 = fallbackBudgetE5
+	}
+
+	bufferedIncomeE5 := currIncomeE5
+	var bufferedUsedE5 int64 = 0
+	var totalRemainingE5 int64 = 0
+
+	if totalExpenseE5 <= baseIncomeE5 {
+		totalRemainingE5 = baseIncomeE5 - totalExpenseE5
+		bufferedUsedE5 = 0
+	} else {
+		deficit := totalExpenseE5 - baseIncomeE5
+		if deficit <= bufferedIncomeE5 {
+			bufferedUsedE5 = deficit
+			totalRemainingE5 = 0
+		} else {
+			bufferedUsedE5 = bufferedIncomeE5
+			uncoveredDeficit := deficit - bufferedIncomeE5
+			totalRemainingE5 = -uncoveredDeficit
+		}
+	}
+
+	bufferedRemainingE5 := bufferedIncomeE5 - bufferedUsedE5
+	effectiveIncomeE5 := baseIncomeE5 + bufferedUsedE5
+
+	dashboardSummary.TotalIncomeE5 = effectiveIncomeE5
+	dashboardSummary.BaseIncomeE5 = baseIncomeE5
+	dashboardSummary.BufferedIncomeE5 = bufferedIncomeE5
+	dashboardSummary.BufferedUsedE5 = bufferedUsedE5
+	dashboardSummary.BufferedRemainingE5 = bufferedRemainingE5
+	dashboardSummary.TotalExpenseE5 = totalExpenseE5
+	dashboardSummary.TotalRemainingE5 = totalRemainingE5
+	dashboardSummary.CardSpentE5 = cardSpentE5
+	dashboardSummary.BankSpentE5 = bankSpentE5
+
 	return dashboardSummary, nil
 }

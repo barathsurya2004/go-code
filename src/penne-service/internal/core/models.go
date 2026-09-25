@@ -174,13 +174,17 @@ type RepoContainer struct {
 }
 
 type DashboardSummary struct {
-	TotalIncomeE5    int64 `json:"total_income_e5"`
-	TotalExpenseE5   int64 `json:"total_expense_e5"`
-	TotalRemainingE5 int64 `json:"total_remaining_e5"`
-	CardSpentE5      int64 `json:"card_spent_e5"`
-	CardLimitE5      int64 `json:"card_limit_e5"`
-	BankSpentE5      int64 `json:"bank_spent_e5"`
-	BankLimitE5      int64 `json:"bank_limit_e5"`
+	TotalIncomeE5       int64 `json:"total_income_e5"`
+	BaseIncomeE5        int64 `json:"base_income_e5"`
+	BufferedIncomeE5    int64 `json:"buffered_income_e5"`
+	BufferedUsedE5      int64 `json:"buffered_used_e5"`
+	BufferedRemainingE5 int64 `json:"buffered_remaining_e5"`
+	TotalExpenseE5      int64 `json:"total_expense_e5"`
+	TotalRemainingE5    int64 `json:"total_remaining_e5"`
+	CardSpentE5         int64 `json:"card_spent_e5"`
+	CardLimitE5         int64 `json:"card_limit_e5"`
+	BankSpentE5         int64 `json:"bank_spent_e5"`
+	BankLimitE5         int64 `json:"bank_limit_e5"`
 }
 
 type CreateUserWorkflowResult struct {
