@@ -510,6 +510,7 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 		Currency        string       `json:"currency"`
 		Cadence         core.Cadence `json:"cadence"`
 		EnvelopeID      uuid.UUID    `json:"envelope_id"`
+		AllocationID    uuid.UUID    `json:"allocation_id,omitempty"`
 	}
 
 	budgetCategories := make([]budgetCategory, 0)
@@ -529,6 +530,7 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 			Currency:        env.CountryISO,
 			Cadence:         env.Cadence,
 			EnvelopeID:      env.ID,
+			AllocationID:    allocation.ID,
 		})
 	}
 
