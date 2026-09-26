@@ -20,3 +20,8 @@ FROM (
     GROUP BY user_uuid
 ) sub
 WHERE u.uuid = sub.user_uuid AND u.monthly_budget_e5 = 0 AND sub.target_sum > 0;
+
+-- 3. Align salary_day to 1 for all users so wishlist calculations align to the 1st of the month
+UPDATE users
+SET salary_day = 1
+WHERE salary_day != 1;
