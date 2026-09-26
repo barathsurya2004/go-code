@@ -301,7 +301,7 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 		mock.ExpectQuery("INSERT INTO wishlist_allocations").
 			WithArgs(
 				alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, "cycle_surplus",
-				sqlmock.AnyArg(), sqlmock.AnyArg(),
+				sqlmock.AnyArg(), sqlmock.AnyArg(), alloc.TransactionID,
 			).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(allocUUID))
 
@@ -322,8 +322,8 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 
 		now := time.Now()
 		rows := sqlmock.NewRows([]string{
-			"id", "wishlist_item_id", "user_uuid", "amount_e5", "source_type", "cycle_date", "created_at",
-		}).AddRow(allocUUID, itemUUID, userUUID, int64(500000), "cycle_surplus", now, now)
+			"id", "wishlist_item_id", "user_uuid", "amount_e5", "source_type", "cycle_date", "created_at", "transaction_id",
+		}).AddRow(allocUUID, itemUUID, userUUID, int64(500000), "cycle_surplus", now, now, nil)
 
 		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE wishlist_item_id = \\$1").
 			WithArgs(itemUUID).
@@ -346,8 +346,8 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 
 		now := time.Now()
 		rows := sqlmock.NewRows([]string{
-			"id", "wishlist_item_id", "user_uuid", "amount_e5", "source_type", "cycle_date", "created_at",
-		}).AddRow(allocUUID, itemUUID, userUUID, int64(500000), "cycle_surplus", now, now)
+			"id", "wishlist_item_id", "user_uuid", "amount_e5", "source_type", "cycle_date", "created_at", "transaction_id",
+		}).AddRow(allocUUID, itemUUID, userUUID, int64(500000), "cycle_surplus", now, now, nil)
 
 		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE user_uuid = \\$1").
 			WithArgs(userUUID).
@@ -374,13 +374,47 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 			t.Error("expected error for delete failure")
 		}
 
-		// Update query error
+		// Update query error without Tx
 		mock.ExpectExec("UPDATE wishlist_items").WithArgs(
-			itemUUID, "Title", int64(100), int64(0), 3, 3, "purchase", "active", nil, "", sqlmock.AnyArg(),
+			"Title", int64(100), int64(0), 3, 3, "purchase", "active", nil, "", itemUUID,
 		).WillReturnError(sql.ErrConnDone)
-		if err := repo.UpdateWishlistItem(&core.WishlistItem{ID: itemUUID, Title: "Title", TargetAmountE5: 100, Priority: 3, Urgency: 3}, nil); err == nil {
+		if err := repo.UpdateWishlistItem(&core.WishlistItem{ID: itemUUID, Title: "Title", TargetAmountE5: 100, Priority: 3, Urgency: 3, ItemType: "purchase", Status: "active"}, nil); err == nil {
 			t.Error("expected error for update failure")
 		}
+
+		// Update query error with Tx
+		mock.ExpectBegin()
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("failed to begin tx: %v", err)
+		}
+		mock.ExpectExec("UPDATE wishlist_items").WithArgs(
+			"Title", int64(100), int64(0), 3, 3, "purchase", "active", nil, "", itemUUID,
+		).WillReturnError(sql.ErrConnDone)
+		if err := repo.UpdateWishlistItem(&core.WishlistItem{ID: itemUUID, Title: "Title", TargetAmountE5: 100, Priority: 3, Urgency: 3, ItemType: "purchase", Status: "active"}, tx); err == nil {
+			t.Error("expected error for update with tx failure")
+		}
+
+		// CreateWishlistAllocation with Tx and query error
+		mock.ExpectQuery("INSERT INTO wishlist_allocations").WithArgs(
+			itemUUID, userUUID, int64(100), "cycle_surplus", sqlmock.AnyArg(), sqlmock.AnyArg(), nil,
+		).WillReturnError(sql.ErrConnDone)
+		if _, err := repo.CreateWishlistAllocation(&core.WishlistAllocation{WishlistItemID: itemUUID, UserUUID: userUUID, AmountE5: 100}, tx); err == nil {
+			t.Error("expected error for create allocation failure")
+		}
+
+		// CreateWishlistAllocation with Tx success
+		allocID := uuid.New()
+		mock.ExpectQuery("INSERT INTO wishlist_allocations").WithArgs(
+			itemUUID, userUUID, int64(100), "cycle_surplus", sqlmock.AnyArg(), sqlmock.AnyArg(), nil,
+		).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(allocID))
+		gotAllocID, err := repo.CreateWishlistAllocation(&core.WishlistAllocation{WishlistItemID: itemUUID, UserUUID: userUUID, AmountE5: 100}, tx);
+		if err != nil || gotAllocID != allocID {
+			t.Errorf("expected success with tx, got %v, err: %v", gotAllocID, err)
+		}
+
+		mock.ExpectRollback()
+		_ = tx.Rollback()
 
 		// GetWishlistItems query error
 		mock.ExpectQuery("SELECT (.+) FROM wishlist_items WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnError(sql.ErrConnDone)
@@ -404,6 +438,31 @@ func TestPgWishlistRepo_WishlistAllocations(t *testing.T) {
 		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnError(sql.ErrConnDone)
 		if _, err := repo.GetWishlistAllocationsByUserUUID(userUUID); err == nil {
 			t.Error("expected error for query failure")
+		}
+
+		// Scan errors
+		badRows := sqlmock.NewRows([]string{"id", "title"}).AddRow("not-a-uuid", 123)
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_items WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnRows(badRows)
+		if _, err := repo.GetWishlistItemsByUserUUID(userUUID); err == nil {
+			t.Error("expected scan error")
+		}
+
+		badRows2 := sqlmock.NewRows([]string{"id", "title"}).AddRow("not-a-uuid", 123)
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_items WHERE user_uuid = \\$1 AND status = 'active'").WithArgs(userUUID).WillReturnRows(badRows2)
+		if _, err := repo.GetActiveWishlistItemsByUserUUID(userUUID); err == nil {
+			t.Error("expected scan error")
+		}
+
+		badRows3 := sqlmock.NewRows([]string{"id"}).AddRow("not-a-uuid")
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE wishlist_item_id = \\$1").WithArgs(itemUUID).WillReturnRows(badRows3)
+		if _, err := repo.GetWishlistAllocationsByItemID(itemUUID); err == nil {
+			t.Error("expected scan error")
+		}
+
+		badRows4 := sqlmock.NewRows([]string{"id"}).AddRow("not-a-uuid")
+		mock.ExpectQuery("SELECT (.+) FROM wishlist_allocations WHERE user_uuid = \\$1").WithArgs(userUUID).WillReturnRows(badRows4)
+		if _, err := repo.GetWishlistAllocationsByUserUUID(userUUID); err == nil {
+			t.Error("expected scan error")
 		}
 	})
 }

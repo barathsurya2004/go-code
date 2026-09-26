@@ -69,6 +69,18 @@ func (m *mockWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocati
 	return uuid.New(), nil
 }
 
+type mockTransactionRepo struct {
+	core.TransactionRepository
+	createTxnFn func(*core.Transaction, *sql.Tx) (uuid.UUID, error)
+}
+
+func (m *mockTransactionRepo) CreateTransaction(txn *core.Transaction, tx *sql.Tx) (uuid.UUID, error) {
+	if m.createTxnFn != nil {
+		return m.createTxnFn(txn, tx)
+	}
+	return uuid.New(), nil
+}
+
 func TestWishlistEngine_GetCycleDateRange(t *testing.T) {
 	engine := NewWishlistEngine(core.RepoContainer{}, nil, zap.NewNop())
 	loc := time.UTC
@@ -391,7 +403,11 @@ func TestWishlistEngine_ApplySurplusDistribution(t *testing.T) {
 			},
 		}
 
-		repos := core.RepoContainer{User: userRepo, Wishlist: wishlistRepo}
+		repos := core.RepoContainer{
+			User:        userRepo,
+			Wishlist:    wishlistRepo,
+			Transaction: &mockTransactionRepo{},
+		}
 		engine := NewWishlistEngine(repos, db, zap.NewNop())
 
 		results, err := engine.ApplySurplusDistribution(ctx, userUUID, asOf)
@@ -771,26 +787,36 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			},
 		}
 
-		eng := NewWishlistEngine(core.RepoContainer{Wishlist: wishlistRepo}, db, zap.NewNop())
+		txnRepo := &mockTransactionRepo{
+			createTxnFn: func(txn *core.Transaction, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.New(), nil
+			},
+		}
+		eng := NewWishlistEngine(core.RepoContainer{Wishlist: wishlistRepo, Transaction: txnRepo}, db, zap.NewNop())
 
 		// Nil checks
-		if _, err := eng.ApplyManualAllocation(context.Background(), uuid.Nil, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), uuid.Nil, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error for nil userUUID")
 		}
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, uuid.Nil, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, uuid.Nil, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error for nil itemID")
 		}
 
 		// Wrong user
 		diffUser := uuid.New()
-		if _, err := eng.ApplyManualAllocation(context.Background(), diffUser, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), diffUser, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when item belongs to different user")
+		}
+
+		// Negative amount
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, -500, "bank_account", time.Now()); err == nil || err.Error() != "allocation amount cannot be negative" {
+			t.Errorf("expected negative amount error, got %v", err)
 		}
 
 		// Success partial allocation
 		mock.ExpectBegin()
 		mock.ExpectCommit()
-		sim, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 2000, time.Now())
+		sim, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 2000, "bank_account", time.Now())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -798,10 +824,10 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			t.Errorf("unexpected simulation result: %+v", sim)
 		}
 
-		// Success full allocation (amountE5 = 0 means allocate remaining needed)
+		// Success full allocation (amountE5 = 0 means allocate remaining needed) with card
 		mock.ExpectBegin()
 		mock.ExpectCommit()
-		simFull, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 0, time.Now())
+		simFull, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 0, "bank_card", time.Now())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -824,7 +850,7 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			},
 		}
 		eng := NewWishlistEngine(core.RepoContainer{Wishlist: wishlistRepo}, db, zap.NewNop())
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when GetWishlistItemByID fails")
 		}
 
@@ -835,7 +861,7 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 		wishlistRepo.getItemFn = func(id uuid.UUID) (*core.WishlistItem, error) {
 			return fulfilledItem, nil
 		}
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when item already fulfilled")
 		}
 
@@ -848,21 +874,34 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			return &cp, nil
 		}
 		mock.ExpectBegin().WillReturnError(errors.New("begin error"))
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when begin tx fails")
 		}
 
-		// 4. CreateAllocation error
+		// 4. CreateTransaction error
+		txnFailRepo := &mockTransactionRepo{
+			createTxnFn: func(txn *core.Transaction, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.Nil, errors.New("failed to create txn")
+			},
+		}
+		engWithTxnFail := NewWishlistEngine(core.RepoContainer{Wishlist: wishlistRepo, Transaction: txnFailRepo}, db, zap.NewNop())
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		if _, err := engWithTxnFail.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
+			t.Error("expected error when create transaction fails")
+		}
+
+		// 5. CreateAllocation error
 		mock.ExpectBegin()
 		wishlistRepo.createAllocationFn = func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
 			return uuid.Nil, errors.New("insert error")
 		}
 		mock.ExpectRollback()
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when create allocation fails")
 		}
 
-		// 5. UpdateItem error
+		// 6. UpdateItem error
 		mock.ExpectBegin()
 		wishlistRepo.createAllocationFn = func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
 			return uuid.New(), nil
@@ -871,17 +910,17 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			return errors.New("update error")
 		}
 		mock.ExpectRollback()
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when update item fails")
 		}
 
-		// 6. Commit error
+		// 7. Commit error
 		mock.ExpectBegin()
 		wishlistRepo.updateItemFn = func(item *core.WishlistItem, tx *sql.Tx) error {
 			return nil
 		}
 		mock.ExpectCommit().WillReturnError(errors.New("commit error"))
-		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, time.Now()); err == nil {
+		if _, err := eng.ApplyManualAllocation(context.Background(), userUUID, itemID, 1000, "bank_account", time.Now()); err == nil {
 			t.Error("expected error when commit fails")
 		}
 	})
@@ -931,7 +970,7 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 			t.Error("expected error when active items is empty")
 		}
 
-		// 4. CreateAllocation error
+		// 4a. CreateTransaction error
 		mock.ExpectQuery("SELECT COALESCE").
 			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
 			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(2000)))
@@ -939,6 +978,22 @@ func TestWishlistEngine_CalculateForecasts_EdgeCases(t *testing.T) {
 		wishlistRepo.getActiveItemsFn = func(u uuid.UUID) ([]*core.WishlistItem, error) {
 			return []*core.WishlistItem{item}, nil
 		}
+		failTxnRepo := &mockTransactionRepo{
+			createTxnFn: func(txn *core.Transaction, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.Nil, errors.New("txn error")
+			},
+		}
+		engWithTxnFail := NewWishlistEngine(core.RepoContainer{User: userRepo, Wishlist: wishlistRepo, Transaction: failTxnRepo}, db, zap.NewNop())
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		if _, err := engWithTxnFail.ApplySurplusDistribution(context.Background(), userUUID, time.Now()); err == nil {
+			t.Error("expected error when create transaction fails")
+		}
+
+		// 4b. CreateAllocation error
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(2000)))
 		mock.ExpectBegin()
 		wishlistRepo.createAllocationFn = func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
 			return uuid.Nil, errors.New("create alloc failed")

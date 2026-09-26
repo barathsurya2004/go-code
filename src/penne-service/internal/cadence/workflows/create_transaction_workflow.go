@@ -79,5 +79,17 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 		).Get(ctx, nil)
 	}
 
+	if txn.WishlistItemID != nil && txn.Type == "debit" {
+		_ = workflow.ExecuteActivity(
+			ctx,
+			"FundWishlistItemActivity",
+			*txn.WishlistItemID,
+			txn.UserID,
+			txn.AmountE5,
+			txnID,
+			txn.CreatedAt,
+		).Get(ctx, nil)
+	}
+
 	return &txnID, nil
 }

@@ -106,3 +106,51 @@ func (a *TransactionActivities) UpdateAllocationSpentActivity(ctx context.Contex
 	}
 	return nil
 }
+
+func (a *TransactionActivities) FundWishlistItemActivity(ctx context.Context, itemID uuid.UUID, userUUID uuid.UUID, amountE5 int64, txnID uuid.UUID, asOf time.Time) error {
+	if a.Repos.Wishlist == nil {
+		return nil
+	}
+	item, err := a.Repos.Wishlist.GetWishlistItemByID(itemID)
+	if err != nil || item == nil {
+		return err
+	}
+	item.SavedAmountE5 += amountE5
+	if item.SavedAmountE5 >= item.TargetAmountE5 {
+		item.Status = "fulfilled"
+	}
+	if err := a.Repos.Wishlist.UpdateWishlistItem(item, nil); err != nil {
+		return err
+	}
+	alloc := &core.WishlistAllocation{
+		WishlistItemID: item.ID,
+		UserUUID:       userUUID,
+		AmountE5:       amountE5,
+		SourceType:     "manual_allocation",
+		CycleDate:      asOf,
+		CreatedAt:      asOf,
+		TransactionID:  &txnID,
+	}
+	_, err = a.Repos.Wishlist.CreateWishlistAllocation(alloc, nil)
+	return err
+}
+
+func (a *TransactionActivities) UpdateWishlistSpentActivity(ctx context.Context, itemID uuid.UUID, amountDeltaE5 int64, txnID uuid.UUID) error {
+	if a.Repos.Wishlist == nil {
+		return nil
+	}
+	item, err := a.Repos.Wishlist.GetWishlistItemByID(itemID)
+	if err != nil || item == nil {
+		return err
+	}
+	item.SavedAmountE5 += amountDeltaE5
+	if item.SavedAmountE5 < 0 {
+		item.SavedAmountE5 = 0
+	}
+	if item.SavedAmountE5 >= item.TargetAmountE5 {
+		item.Status = "fulfilled"
+	} else {
+		item.Status = "active"
+	}
+	return a.Repos.Wishlist.UpdateWishlistItem(item, nil)
+}

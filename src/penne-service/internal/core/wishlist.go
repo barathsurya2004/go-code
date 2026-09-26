@@ -29,8 +29,9 @@ type WishlistAllocation struct {
 	UserUUID       uuid.UUID `json:"user_uuid"`
 	AmountE5       int64     `json:"amount_e5"`
 	SourceType     string    `json:"source_type"`
-	CycleDate      time.Time `json:"cycle_date"`
-	CreatedAt      time.Time `json:"created_at"`
+	CycleDate      time.Time  `json:"cycle_date"`
+	CreatedAt      time.Time  `json:"created_at"`
+	TransactionID  *uuid.UUID `json:"transaction_id,omitempty"`
 }
 
 type ItemAllocationSimulation struct {

@@ -251,9 +251,9 @@ func (r *pgWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocation
 
 	query := `
 		INSERT INTO wishlist_allocations (
-			wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at
+			wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 
@@ -261,11 +261,11 @@ func (r *pgWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocation
 	var err error
 	if Tx != nil {
 		err = Tx.QueryRowContext(context.Background(), query,
-			alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt,
+			alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt, alloc.TransactionID,
 		).Scan(&id)
 	} else {
 		err = r.db.QueryRowContext(context.Background(), query,
-			alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt,
+			alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt, alloc.TransactionID,
 		).Scan(&id)
 	}
 	if err != nil {
@@ -280,7 +280,7 @@ func (r *pgWishlistRepo) GetWishlistAllocationsByItemID(itemID uuid.UUID) ([]*co
 	}
 
 	query := `
-		SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at
+		SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
 		FROM wishlist_allocations
 		WHERE wishlist_item_id = $1
 		ORDER BY created_at DESC
@@ -297,7 +297,7 @@ func (r *pgWishlistRepo) GetWishlistAllocationsByItemID(itemID uuid.UUID) ([]*co
 		alloc := &core.WishlistAllocation{}
 		if err := rows.Scan(
 			&alloc.ID, &alloc.WishlistItemID, &alloc.UserUUID, &alloc.AmountE5,
-			&alloc.SourceType, &alloc.CycleDate, &alloc.CreatedAt,
+			&alloc.SourceType, &alloc.CycleDate, &alloc.CreatedAt, &alloc.TransactionID,
 		); err != nil {
 			return nil, err
 		}
@@ -315,7 +315,7 @@ func (r *pgWishlistRepo) GetWishlistAllocationsByUserUUID(userUUID uuid.UUID) ([
 	}
 
 	query := `
-		SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at
+		SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
 		FROM wishlist_allocations
 		WHERE user_uuid = $1
 		ORDER BY created_at DESC
@@ -332,7 +332,7 @@ func (r *pgWishlistRepo) GetWishlistAllocationsByUserUUID(userUUID uuid.UUID) ([
 		alloc := &core.WishlistAllocation{}
 		if err := rows.Scan(
 			&alloc.ID, &alloc.WishlistItemID, &alloc.UserUUID, &alloc.AmountE5,
-			&alloc.SourceType, &alloc.CycleDate, &alloc.CreatedAt,
+			&alloc.SourceType, &alloc.CycleDate, &alloc.CreatedAt, &alloc.TransactionID,
 		); err != nil {
 			return nil, err
 		}

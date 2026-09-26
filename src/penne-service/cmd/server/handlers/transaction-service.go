@@ -53,6 +53,9 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 	}
 
 	txn.UserID = userUUID
+	if txn.CountryISO == "" {
+		txn.CountryISO = "IN"
+	}
 
 	// tx, err := h.db.BeginTx(r.Context(), nil)
 	// if err != nil {
@@ -191,12 +194,14 @@ func (h *TransactionServiceHandler) GetTransactionsByUserUUID(w http.ResponseWri
 
 func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID            uuid.UUID  `json:"id"`
-		UUID          uuid.UUID  `json:"uuid"`
-		EnvelopeID    *uuid.UUID `json:"envelope_id"`
-		AmountE5      int64      `json:"amount_e5"`
-		Type          string     `json:"txn_type"`
-		PaymentMethod string     `json:"payment_method"`
+		ID             uuid.UUID  `json:"id"`
+		UUID           uuid.UUID  `json:"uuid"`
+		EnvelopeID     *uuid.UUID `json:"envelope_id"`
+		AmountE5       int64      `json:"amount_e5"`
+		Type           string     `json:"txn_type"`
+		PaymentMethod  string     `json:"payment_method"`
+		Description    *string    `json:"description"`
+		WishlistItemID *uuid.UUID `json:"wishlist_item_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
@@ -207,7 +212,7 @@ func (h *TransactionServiceHandler) UpdateTransaction(w http.ResponseWriter, r *
 	if txnID == uuid.Nil {
 		txnID = req.UUID
 	}
-	h.handleUpdateTransaction(w, r, txnID, req.EnvelopeID, req.AmountE5, req.Type, req.PaymentMethod)
+	h.handleUpdateTransaction(w, r, txnID, req.EnvelopeID, req.AmountE5, req.Type, req.PaymentMethod, req.Description, req.WishlistItemID)
 }
 
 func (h *TransactionServiceHandler) UpdateTransactionCategory(w http.ResponseWriter, r *http.Request) {
@@ -223,10 +228,10 @@ func (h *TransactionServiceHandler) UpdateTransactionCategory(w http.ResponseWri
 		return
 	}
 
-	h.handleUpdateTransaction(w, r, req.TransactionID, req.NewEnvelopeID, req.AmountE5, req.TxnType, req.PaymentMethod)
+	h.handleUpdateTransaction(w, r, req.TransactionID, req.NewEnvelopeID, req.AmountE5, req.TxnType, req.PaymentMethod, nil, nil)
 }
 
-func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWriter, r *http.Request, txnID uuid.UUID, envelopeID *uuid.UUID, amountE5 int64, txnType string, paymentMethod string) {
+func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWriter, r *http.Request, txnID uuid.UUID, envelopeID *uuid.UUID, amountE5 int64, txnType string, paymentMethod string, description *string, wishlistItemID *uuid.UUID) {
 	if txnID == uuid.Nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
@@ -272,11 +277,23 @@ func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWrite
 			http.Error(w, "Failed to update transaction category", http.StatusInternalServerError)
 			return
 		}
+
+		if txnToUpdate.WishlistItemID != nil && txnToUpdate.Type == "debit" && h.db != nil {
+			delta := amountE5 - txnToUpdate.AmountE5
+			if delta != 0 {
+				_, _ = h.db.ExecContext(r.Context(), "UPDATE wishlist_allocations SET amount_e5 = amount_e5 + $1 WHERE transaction_id = $2", delta, txnID)
+			}
+		}
+
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	newTxn := txnToUpdate
+	oldAmountE5 := txnToUpdate.AmountE5
+	oldEnvelopeID := txnToUpdate.EnvelopeID
+	oldType := txnToUpdate.Type
+
+	newTxn := *txnToUpdate
 	if amountE5 != 0 {
 		newTxn.AmountE5 = amountE5
 	}
@@ -286,13 +303,19 @@ func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWrite
 	if paymentMethod != "" {
 		newTxn.PaymentMethod = paymentMethod
 	}
+	if description != nil {
+		newTxn.Description = *description
+	}
+	if wishlistItemID != nil {
+		newTxn.WishlistItemID = wishlistItemID
+	}
 	newTxn.EnvelopeID = envelopeID
 
 	if h.repos.Allocation != nil {
 		isCategoryChanged := false
-		if (txnToUpdate.EnvelopeID == nil && newTxn.EnvelopeID != nil) || (txnToUpdate.EnvelopeID != nil && newTxn.EnvelopeID == nil) {
+		if (oldEnvelopeID == nil && newTxn.EnvelopeID != nil) || (oldEnvelopeID != nil && newTxn.EnvelopeID == nil) {
 			isCategoryChanged = true
-		} else if txnToUpdate.EnvelopeID != nil && newTxn.EnvelopeID != nil && *txnToUpdate.EnvelopeID != *newTxn.EnvelopeID {
+		} else if oldEnvelopeID != nil && newTxn.EnvelopeID != nil && *oldEnvelopeID != *newTxn.EnvelopeID {
 			isCategoryChanged = true
 		}
 
@@ -302,21 +325,43 @@ func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWrite
 		}
 
 		if isCategoryChanged {
-			if txnToUpdate.EnvelopeID != nil && txnToUpdate.Type == "debit" {
-				_ = h.repos.Allocation.UpdateSpentAmount(*txnToUpdate.EnvelopeID, targetDate, -txnToUpdate.AmountE5, nil)
+			if oldEnvelopeID != nil && oldType == "debit" {
+				_ = h.repos.Allocation.UpdateSpentAmount(*oldEnvelopeID, targetDate, -oldAmountE5, nil)
 			}
 			if newTxn.EnvelopeID != nil && newTxn.Type == "debit" {
 				_ = h.repos.Allocation.UpdateSpentAmount(*newTxn.EnvelopeID, targetDate, newTxn.AmountE5, nil)
 			}
 		} else if newTxn.EnvelopeID != nil && newTxn.Type == "debit" {
-			delta := newTxn.AmountE5 - txnToUpdate.AmountE5
+			delta := newTxn.AmountE5 - oldAmountE5
 			if delta != 0 {
 				_ = h.repos.Allocation.UpdateSpentAmount(*newTxn.EnvelopeID, targetDate, delta, nil)
 			}
 		}
 	}
 
-	if err := h.transactionRepo.UpdateTransaction(newTxn, nil); err != nil {
+	if txnToUpdate.WishlistItemID != nil && oldType == "debit" && h.repos.Wishlist != nil {
+		delta := newTxn.AmountE5 - oldAmountE5
+		if delta != 0 {
+			item, err := h.repos.Wishlist.GetWishlistItemByID(*txnToUpdate.WishlistItemID)
+			if err == nil && item != nil {
+				item.SavedAmountE5 += delta
+				if item.SavedAmountE5 < 0 {
+					item.SavedAmountE5 = 0
+				}
+				if item.SavedAmountE5 >= item.TargetAmountE5 {
+					item.Status = "fulfilled"
+				} else {
+					item.Status = "active"
+				}
+				_ = h.repos.Wishlist.UpdateWishlistItem(item, nil)
+			}
+			if h.db != nil {
+				_, _ = h.db.ExecContext(r.Context(), "UPDATE wishlist_allocations SET amount_e5 = amount_e5 + $1 WHERE transaction_id = $2", delta, txnID)
+			}
+		}
+	}
+
+	if err := h.transactionRepo.UpdateTransaction(&newTxn, nil); err != nil {
 		http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
 		h.logger.Error("Failed to update transaction", zap.Error(err))
 		return
@@ -338,8 +383,26 @@ func (h *TransactionServiceHandler) DeleteTransaction(w http.ResponseWriter, r *
 
 	// Refund spent amount if transaction was allocated and debit
 	existingTxn, _ := h.transactionRepo.GetTransactionByUUID(txnUUID)
-	if existingTxn != nil && existingTxn.EnvelopeID != nil && existingTxn.Type == "debit" && h.repos.Allocation != nil {
-		_ = h.repos.Allocation.UpdateSpentAmount(*existingTxn.EnvelopeID, existingTxn.CreatedAt, -existingTxn.AmountE5, nil)
+	if existingTxn != nil {
+		if existingTxn.EnvelopeID != nil && existingTxn.Type == "debit" && h.repos.Allocation != nil {
+			_ = h.repos.Allocation.UpdateSpentAmount(*existingTxn.EnvelopeID, existingTxn.CreatedAt, -existingTxn.AmountE5, nil)
+		}
+		if existingTxn.WishlistItemID != nil && existingTxn.Type == "debit" && h.repos.Wishlist != nil {
+			item, err := h.repos.Wishlist.GetWishlistItemByID(*existingTxn.WishlistItemID)
+			if err == nil && item != nil {
+				item.SavedAmountE5 -= existingTxn.AmountE5
+				if item.SavedAmountE5 < 0 {
+					item.SavedAmountE5 = 0
+				}
+				if item.SavedAmountE5 < item.TargetAmountE5 && item.Status == "fulfilled" {
+					item.Status = "active"
+				}
+				_ = h.repos.Wishlist.UpdateWishlistItem(item, nil)
+			}
+			if h.db != nil {
+				_, _ = h.db.ExecContext(r.Context(), "DELETE FROM wishlist_allocations WHERE transaction_id = $1", txnUUID)
+			}
+		}
 	}
 
 	if err := h.transactionRepo.DeleteTransaction(txnUUID); err != nil {
@@ -383,6 +446,26 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		if txn.EnvelopeID != nil && txn.Type == "debit" && h.repos.Allocation != nil {
 			_ = h.repos.Allocation.UpdateSpentAmount(*txn.EnvelopeID, txn.CreatedAt, txn.AmountE5, Tx)
 		}
+		if txn.WishlistItemID != nil && txn.Type == "debit" && h.repos.Wishlist != nil {
+			item, err := h.repos.Wishlist.GetWishlistItemByID(*txn.WishlistItemID)
+			if err == nil && item != nil {
+				item.SavedAmountE5 += txn.AmountE5
+				if item.SavedAmountE5 >= item.TargetAmountE5 {
+					item.Status = "fulfilled"
+				}
+				_ = h.repos.Wishlist.UpdateWishlistItem(item, Tx)
+				alloc := &core.WishlistAllocation{
+					WishlistItemID: item.ID,
+					UserUUID:       userUUID,
+					AmountE5:       txn.AmountE5,
+					SourceType:     "manual_allocation",
+					CycleDate:      txn.CreatedAt,
+					CreatedAt:      txn.CreatedAt,
+					TransactionID:  &txnID,
+				}
+				_, _ = h.repos.Wishlist.CreateWishlistAllocation(alloc, Tx)
+			}
+		}
 		return &txnID, nil
 	} else {
 		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
@@ -392,6 +475,26 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		}
 		if txn.EnvelopeID != nil && txn.Type == "debit" && h.repos.Allocation != nil {
 			_ = h.repos.Allocation.UpdateSpentAmount(*txn.EnvelopeID, txn.CreatedAt, txn.AmountE5, Tx)
+		}
+		if txn.WishlistItemID != nil && txn.Type == "debit" && h.repos.Wishlist != nil {
+			item, err := h.repos.Wishlist.GetWishlistItemByID(*txn.WishlistItemID)
+			if err == nil && item != nil {
+				item.SavedAmountE5 += txn.AmountE5
+				if item.SavedAmountE5 >= item.TargetAmountE5 {
+					item.Status = "fulfilled"
+				}
+				_ = h.repos.Wishlist.UpdateWishlistItem(item, Tx)
+				alloc := &core.WishlistAllocation{
+					WishlistItemID: item.ID,
+					UserUUID:       userUUID,
+					AmountE5:       txn.AmountE5,
+					SourceType:     "manual_allocation",
+					CycleDate:      txn.CreatedAt,
+					CreatedAt:      txn.CreatedAt,
+					TransactionID:  &txnID,
+				}
+				_, _ = h.repos.Wishlist.CreateWishlistAllocation(alloc, Tx)
+			}
 		}
 		h.logger.Info("Waiting for the shortcut intent to trigger the attribution")
 		return &txnID, nil

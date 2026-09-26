@@ -36,6 +36,8 @@ func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger
 		activity.RegisterWithOptions(transactionAct.UpdateTransactionActivity, activity.RegisterOptions{Name: "UpdateTransactionActivity"})
 		activity.RegisterWithOptions(transactionAct.GetTransactionByIDActivity, activity.RegisterOptions{Name: "GetTransactionByIDActivity"})
 		activity.RegisterWithOptions(transactionAct.UpdateAllocationSpentActivity, activity.RegisterOptions{Name: "UpdateAllocationSpentActivity"})
+		activity.RegisterWithOptions(transactionAct.FundWishlistItemActivity, activity.RegisterOptions{Name: "FundWishlistItemActivity"})
+		activity.RegisterWithOptions(transactionAct.UpdateWishlistSpentActivity, activity.RegisterOptions{Name: "UpdateWishlistSpentActivity"})
 
 		activity.RegisterWithOptions(userAct.CreateUserActivity, activity.RegisterOptions{Name: "CreateUserActivity"})
 		activity.RegisterWithOptions(userAct.CreateSystemEnvelopeGroupActivity, activity.RegisterOptions{Name: "CreateSystemEnvelopeGroupActivity"})

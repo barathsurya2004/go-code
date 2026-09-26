@@ -370,3 +370,176 @@ func TestTransactionActivities_UpdateAllocationSpentActivity(t *testing.T) {
 	}
 }
 
+type mockWishlistRepo struct {
+	core.WishlistRepository
+	getItemByIDFn func(id uuid.UUID) (*core.WishlistItem, error)
+	updateItemFn  func(item *core.WishlistItem, Tx *sql.Tx) error
+	createAllocFn func(alloc *core.WishlistAllocation, Tx *sql.Tx) (uuid.UUID, error)
+}
+
+func (m *mockWishlistRepo) GetWishlistItemByID(id uuid.UUID) (*core.WishlistItem, error) {
+	if m.getItemByIDFn != nil {
+		return m.getItemByIDFn(id)
+	}
+	return nil, nil
+}
+
+func (m *mockWishlistRepo) UpdateWishlistItem(item *core.WishlistItem, Tx *sql.Tx) error {
+	if m.updateItemFn != nil {
+		return m.updateItemFn(item, Tx)
+	}
+	return nil
+}
+
+func (m *mockWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocation, Tx *sql.Tx) (uuid.UUID, error) {
+	if m.createAllocFn != nil {
+		return m.createAllocFn(alloc, Tx)
+	}
+	return uuid.Nil, nil
+}
+
+func TestTransactionActivities_FundWishlistItemActivity(t *testing.T) {
+	logger := zap.NewNop()
+	itemID := uuid.New()
+	userUUID := uuid.New()
+	txnID := uuid.New()
+	now := time.Now()
+
+	// Nil wishlist repo
+	actsNil := NewTransactionActivities(core.RepoContainer{Wishlist: nil}, logger)
+	if err := actsNil.FundWishlistItemActivity(context.Background(), itemID, userUUID, 500, txnID, now); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	// Item not found or error
+	mockNotFound := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return nil, errors.New("not found")
+		},
+	}
+	actsNotFound := NewTransactionActivities(core.RepoContainer{Wishlist: mockNotFound}, logger)
+	if err := actsNotFound.FundWishlistItemActivity(context.Background(), itemID, userUUID, 500, txnID, now); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// UpdateWishlistItem error
+	mockUpdateErr := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return &core.WishlistItem{ID: id, SavedAmountE5: 100, TargetAmountE5: 1000}, nil
+		},
+		updateItemFn: func(item *core.WishlistItem, Tx *sql.Tx) error {
+			return errors.New("update err")
+		},
+	}
+	actsUpdateErr := NewTransactionActivities(core.RepoContainer{Wishlist: mockUpdateErr}, logger)
+	if err := actsUpdateErr.FundWishlistItemActivity(context.Background(), itemID, userUUID, 500, txnID, now); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// CreateWishlistAllocation error
+	mockAllocErr := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return &core.WishlistItem{ID: id, SavedAmountE5: 500, TargetAmountE5: 1000}, nil
+		},
+		updateItemFn: func(item *core.WishlistItem, Tx *sql.Tx) error {
+			return nil
+		},
+		createAllocFn: func(alloc *core.WishlistAllocation, Tx *sql.Tx) (uuid.UUID, error) {
+			return uuid.Nil, errors.New("alloc err")
+		},
+	}
+	actsAllocErr := NewTransactionActivities(core.RepoContainer{Wishlist: mockAllocErr}, logger)
+	if err := actsAllocErr.FundWishlistItemActivity(context.Background(), itemID, userUUID, 500, txnID, now); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Success with fulfillment
+	var updatedItem *core.WishlistItem
+	var createdAlloc *core.WishlistAllocation
+	mockSuccess := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return &core.WishlistItem{ID: id, SavedAmountE5: 800, TargetAmountE5: 1000, Status: "active"}, nil
+		},
+		updateItemFn: func(item *core.WishlistItem, Tx *sql.Tx) error {
+			updatedItem = item
+			return nil
+		},
+		createAllocFn: func(alloc *core.WishlistAllocation, Tx *sql.Tx) (uuid.UUID, error) {
+			createdAlloc = alloc
+			return uuid.New(), nil
+		},
+	}
+	actsSuccess := NewTransactionActivities(core.RepoContainer{Wishlist: mockSuccess}, logger)
+	if err := actsSuccess.FundWishlistItemActivity(context.Background(), itemID, userUUID, 300, txnID, now); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if updatedItem == nil || updatedItem.SavedAmountE5 != 1100 || updatedItem.Status != "fulfilled" {
+		t.Fatalf("expected updated item to have 1100 and fulfilled, got %v", updatedItem)
+	}
+	if createdAlloc == nil || createdAlloc.AmountE5 != 300 || *createdAlloc.TransactionID != txnID {
+		t.Fatalf("expected alloc with amount 300 and txnID, got %v", createdAlloc)
+	}
+}
+
+func TestTransactionActivities_UpdateWishlistSpentActivity(t *testing.T) {
+	logger := zap.NewNop()
+	itemID := uuid.New()
+	txnID := uuid.New()
+
+	// Nil wishlist repo
+	actsNil := NewTransactionActivities(core.RepoContainer{Wishlist: nil}, logger)
+	if err := actsNil.UpdateWishlistSpentActivity(context.Background(), itemID, 500, txnID); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	// Get error
+	mockGetErr := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return nil, errors.New("item not found")
+		},
+	}
+	actsGetErr := NewTransactionActivities(core.RepoContainer{Wishlist: mockGetErr}, logger)
+	if err := actsGetErr.UpdateWishlistSpentActivity(context.Background(), itemID, 500, txnID); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Clamping to 0 and reverting status to active
+	var clampedItem *core.WishlistItem
+	mockClamp := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return &core.WishlistItem{ID: id, SavedAmountE5: 100, TargetAmountE5: 1000, Status: "fulfilled"}, nil
+		},
+		updateItemFn: func(item *core.WishlistItem, Tx *sql.Tx) error {
+			clampedItem = item
+			return nil
+		},
+	}
+	actsClamp := NewTransactionActivities(core.RepoContainer{Wishlist: mockClamp}, logger)
+	if err := actsClamp.UpdateWishlistSpentActivity(context.Background(), itemID, -500, txnID); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if clampedItem == nil || clampedItem.SavedAmountE5 != 0 || clampedItem.Status != "active" {
+		t.Fatalf("expected clamped item to be 0 and active, got %v", clampedItem)
+	}
+
+	// Reaching fulfillment
+	var fulfilledItem *core.WishlistItem
+	mockFulfill := &mockWishlistRepo{
+		getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+			return &core.WishlistItem{ID: id, SavedAmountE5: 800, TargetAmountE5: 1000, Status: "active"}, nil
+		},
+		updateItemFn: func(item *core.WishlistItem, Tx *sql.Tx) error {
+			fulfilledItem = item
+			return nil
+		},
+	}
+	actsFulfill := NewTransactionActivities(core.RepoContainer{Wishlist: mockFulfill}, logger)
+	if err := actsFulfill.UpdateWishlistSpentActivity(context.Background(), itemID, 300, txnID); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if fulfilledItem == nil || fulfilledItem.SavedAmountE5 != 1100 || fulfilledItem.Status != "fulfilled" {
+		t.Fatalf("expected fulfilled item, got %v", fulfilledItem)
+	}
+}
+
+

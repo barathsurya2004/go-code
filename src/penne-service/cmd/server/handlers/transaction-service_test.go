@@ -589,6 +589,106 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateTransaction - Cadence Success with WishlistItem Delta", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+
+		mockWishID := uuid.New()
+		txnID := uuid.New()
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+				return &core.Transaction{
+					ID:             txnID,
+					AmountE5:       3000,
+					Type:           "debit",
+					WishlistItemID: &mockWishID,
+				}, nil
+			},
+		}
+
+		mock.ExpectExec("UPDATE wishlist_allocations SET amount_e5 = amount_e5 \\+ \\$1 WHERE transaction_id = \\$2").
+			WithArgs(int64(2000), txnID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		cc := &mockCadenceClient{
+			executeWorkflowFn: func(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+				return &mockWorkflowRun{}, nil
+			},
+		}
+
+		cadenceHandler := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, dbMock, cc, core.RepoContainer{})
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":5000,"txn_type":"debit"}`, txnID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		cadenceHandler.UpdateTransaction(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rr.Code)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled sqlmock expectations: %v", err)
+		}
+	})
+
+	t.Run("UpdateTransaction - Fallback with WishlistItem Delta Negative and Clamped", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+
+		mockWishID := uuid.New()
+		txnID := uuid.New()
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+				return &core.Transaction{
+					ID:             txnID,
+					AmountE5:       5000,
+					Type:           "debit",
+					WishlistItemID: &mockWishID,
+				}, nil
+			},
+			updateTransactionFn: func(txn *core.Transaction) error {
+				return nil
+			},
+		}
+
+		var updatedWishItem *core.WishlistItem
+		localWishRepo := &mockWishlistRepo{
+			getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return &core.WishlistItem{
+					ID:             mockWishID,
+					SavedAmountE5:  5000,
+					TargetAmountE5: 5000,
+					Status:         "fulfilled",
+				}, nil
+			},
+			updateItemFn: func(item *core.WishlistItem, tx *sql.Tx) error {
+				updatedWishItem = item
+				return nil
+			},
+		}
+
+		mock.ExpectExec("UPDATE wishlist_allocations SET amount_e5 = amount_e5 \\+ \\$1 WHERE transaction_id = \\$2").
+			WithArgs(int64(-6000), txnID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		fallbackHandler := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, dbMock, nil, core.RepoContainer{Wishlist: localWishRepo})
+		body := fmt.Sprintf(`{"id":"%s","amount_e5":-1000,"txn_type":"debit"}`, txnID.String())
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(body))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		fallbackHandler.UpdateTransaction(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rr.Code)
+		}
+		if updatedWishItem == nil || updatedWishItem.SavedAmountE5 != 0 || updatedWishItem.Status != "active" {
+			t.Errorf("expected wish item saved to be 0 and active, got %+v", updatedWishItem)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled sqlmock expectations: %v", err)
+		}
+	})
+
 	t.Run("UpdateTransaction - Nil Transaction ID", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBufferString(`{}`))
 		rr := httptest.NewRecorder()
@@ -678,6 +778,118 @@ func TestTransactionServiceHandler(t *testing.T) {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
 	})
+
+	t.Run("DeleteTransaction - Success With Wishlist Refund and Allocation Delete", func(t *testing.T) {
+		dbMock, mock, _ := sqlmock.New()
+		defer dbMock.Close()
+
+		mockWishID := uuid.New()
+		txnID := uuid.New()
+		localTxnRepo := &mockTxnRepo{
+			getTransactionByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+				return &core.Transaction{
+					ID:             txnID,
+					AmountE5:       5000,
+					Type:           "debit",
+					WishlistItemID: &mockWishID,
+				}, nil
+			},
+			deleteTransactionFn: func(id uuid.UUID) error {
+				return nil
+			},
+		}
+
+		var updatedWishItem *core.WishlistItem
+		localWishRepo := &mockWishlistRepo{
+			getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return &core.WishlistItem{
+					ID:             mockWishID,
+					SavedAmountE5:  5000,
+					TargetAmountE5: 5000,
+					Status:         "fulfilled",
+				}, nil
+			},
+			updateItemFn: func(item *core.WishlistItem, tx *sql.Tx) error {
+				updatedWishItem = item
+				return nil
+			},
+		}
+
+		mock.ExpectExec("DELETE FROM wishlist_allocations WHERE transaction_id = \\$1").
+			WithArgs(txnID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		h := NewTransactionServiceHandler(localTxnRepo, shortcutIntentRepo, logger, dbMock, nil, core.RepoContainer{Wishlist: localWishRepo})
+		req := httptest.NewRequest("DELETE", "/transaction?uuid="+txnID.String(), nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUUID))
+		rr := httptest.NewRecorder()
+
+		h.DeleteTransaction(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+		if updatedWishItem == nil || updatedWishItem.SavedAmountE5 != 0 || updatedWishItem.Status != "active" {
+			t.Errorf("expected wish item saved to be 0 and active, got %+v", updatedWishItem)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled sqlmock expectations: %v", err)
+		}
+	})
+
+	t.Run("CreateTransactionWorkflow - With WishlistItemID", func(t *testing.T) {
+		txnID := uuid.New()
+		mockWishID := uuid.New()
+
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+
+		var updatedWishItem *core.WishlistItem
+		var createdAlloc *core.WishlistAllocation
+		localWishRepo := &mockWishlistRepo{
+			getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return &core.WishlistItem{
+					ID:             mockWishID,
+					SavedAmountE5:  4000,
+					TargetAmountE5: 5000,
+					Status:         "active",
+				}, nil
+			},
+			updateItemFn: func(item *core.WishlistItem, tx *sql.Tx) error {
+				updatedWishItem = item
+				return nil
+			},
+			createAllocFn: func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+				createdAlloc = alloc
+				return uuid.New(), nil
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{Wishlist: localWishRepo})
+		res, err := h.CreateTransactionWorkflow(&core.Transaction{
+			AmountE5:       1000,
+			Type:           "debit",
+			WishlistItemID: &mockWishID,
+		}, validUUID, nil)
+		if err != nil || res == nil || *res != txnID {
+			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
+		}
+		if updatedWishItem == nil || updatedWishItem.SavedAmountE5 != 5000 || updatedWishItem.Status != "fulfilled" {
+			t.Errorf("expected wish item saved to be 5000 and fulfilled, got %+v", updatedWishItem)
+		}
+		if createdAlloc == nil || createdAlloc.AmountE5 != 1000 || *createdAlloc.TransactionID != txnID {
+			t.Errorf("expected alloc to be created with 1000 and txnID, got %+v", createdAlloc)
+		}
+	})
+
 
 	t.Run("CreateTransactionWorkflow - Success with Pending Shortcut Intent", func(t *testing.T) {
 		txnID := uuid.New()

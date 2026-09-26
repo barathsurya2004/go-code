@@ -334,8 +334,9 @@ func (h *WishlistServiceHandler) ManualAllocate(w http.ResponseWriter, r *http.R
 	}
 
 	type request struct {
-		ItemID   uuid.UUID `json:"item_id"`
-		AmountE5 int64     `json:"amount_e5"`
+		ItemID        uuid.UUID `json:"item_id"`
+		AmountE5      int64     `json:"amount_e5"`
+		PaymentMethod string    `json:"payment_method"`
 	}
 
 	var req request
@@ -369,8 +370,16 @@ func (h *WishlistServiceHandler) ManualAllocate(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if req.PaymentMethod == "" {
+		if pm := r.URL.Query().Get("payment_method"); pm != "" {
+			req.PaymentMethod = pm
+		} else {
+			req.PaymentMethod = "bank_account"
+		}
+	}
+
 	now := utils.NowUTC()
-	allocResult, err := h.engine.ApplyManualAllocation(r.Context(), userUUID, req.ItemID, req.AmountE5, now)
+	allocResult, err := h.engine.ApplyManualAllocation(r.Context(), userUUID, req.ItemID, req.AmountE5, req.PaymentMethod, now)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		h.logger.Error("Failed to apply manual allocation", zap.Error(err))

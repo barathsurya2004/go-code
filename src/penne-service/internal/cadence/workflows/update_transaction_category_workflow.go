@@ -77,6 +77,13 @@ func UpdateTransactionCategoryWorkflow(ctx workflow.Context, req core.UpdateTran
 		}
 	}
 
+	if existingTxn.WishlistItemID != nil && existingTxn.Type == "debit" {
+		delta := amountE5 - existingTxn.AmountE5
+		if delta != 0 {
+			_ = workflow.ExecuteActivity(ctx, "UpdateWishlistSpentActivity", *existingTxn.WishlistItemID, delta, existingTxn.ID).Get(ctx, nil)
+		}
+	}
+
 	// Step 4: Update the transaction record with the new category and details
 	updatedTxn := existingTxn
 	updatedTxn.EnvelopeID = newEnvelopeID

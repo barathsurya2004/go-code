@@ -24,8 +24,8 @@ func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository {
 
 func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
 	query := `
-		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type,created_at,shortcut_intent_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)RETURNING id
+		INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id, description, wishlist_item_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
 	`
 
 	// validation checks
@@ -55,6 +55,8 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.Type,
 			txn.CreatedAt,
 			txn.ShortcutIntentID,
+			txn.Description,
+			txn.WishlistItemID,
 		)
 	} else {
 		row = r.db.QueryRow(query,
@@ -66,6 +68,8 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 			txn.Type,
 			txn.CreatedAt,
 			txn.ShortcutIntentID,
+			txn.Description,
+			txn.WishlistItemID,
 		)
 	}
 	if err := row.Scan(&txnID); err != nil {
@@ -77,7 +81,7 @@ func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql
 
 func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) {
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id, COALESCE(description, ''), wishlist_item_id
 		FROM transactionrows
 		WHERE id = $1
 	`
@@ -97,6 +101,8 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 		&txn.Type,
 		&txn.CreatedAt,
 		&txn.ShortcutIntentID,
+		&txn.Description,
+		&txn.WishlistItemID,
 	)
 	if err != nil {
 		return nil, err
@@ -106,7 +112,7 @@ func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transa
 
 func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*core.Transaction, error) {
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
 		FROM transactionrows
 		WHERE user_id = $1
 	`
@@ -133,6 +139,8 @@ func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*
 			&txn.PaymentMethod,
 			&txn.Type,
 			&txn.CreatedAt,
+			&txn.Description,
+			&txn.WishlistItemID,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +163,7 @@ func (r *pgTransactionRowsRepo) GetTransactionByUserUUIDPaginated(userID uuid.UU
 	}
 
 	query := `
-		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
 		FROM transactionrows
 		WHERE user_id = $1
 		  AND ($2::timestamptz IS NULL OR $3::uuid IS NULL OR (created_at, id) < ($2, $3))
@@ -190,6 +198,8 @@ func (r *pgTransactionRowsRepo) GetTransactionByUserUUIDPaginated(userID uuid.UU
 			&txn.PaymentMethod,
 			&txn.Type,
 			&txn.CreatedAt,
+			&txn.Description,
+			&txn.WishlistItemID,
 		); err != nil {
 			return nil, err
 		}
@@ -206,8 +216,8 @@ func (r *pgTransactionRowsRepo) GetTransactionByUserUUIDPaginated(userID uuid.UU
 func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction, Tx *sql.Tx) error {
 	query := `
 		UPDATE transactionrows
-		SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, payment_method = $4, txn_type = $5, shortcut_intent_id = $6
-		WHERE id = $7
+		SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, payment_method = $4, txn_type = $5, shortcut_intent_id = $6, description = $7, wishlist_item_id = $8
+		WHERE id = $9
 	`
 
 	// validation checks
@@ -232,6 +242,8 @@ func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction, Tx *sql
 			txn.PaymentMethod,
 			txn.Type,
 			txn.ShortcutIntentID,
+			txn.Description,
+			txn.WishlistItemID,
 			txn.ID,
 		)
 	} else {
@@ -242,6 +254,8 @@ func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction, Tx *sql
 			txn.PaymentMethod,
 			txn.Type,
 			txn.ShortcutIntentID,
+			txn.Description,
+			txn.WishlistItemID,
 			txn.ID,
 		)
 	}

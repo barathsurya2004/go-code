@@ -303,12 +303,33 @@ func (e *WishlistEngine) ApplySurplusDistribution(ctx context.Context, userUUID 
 			continue
 		}
 
+		var txnID *uuid.UUID
+		if e.repos.Transaction != nil {
+			txn := &core.Transaction{
+				UserID:         userUUID,
+				AmountE5:       sim.AllocatedE5,
+				Type:           core.TxnTypeDebit,
+				PaymentMethod:  "bank_account",
+				CountryISO:     "IN",
+				CreatedAt:      cycleDate,
+				Description:    "Wishlist: " + sim.ItemTitle,
+				WishlistItemID: &sim.ItemID,
+			}
+			createdTxnID, err := e.repos.Transaction.CreateTransaction(txn, tx)
+			if err != nil {
+				e.logger.Error("Failed to create transaction for surplus allocation", zap.Error(err))
+				return nil, err
+			}
+			txnID = &createdTxnID
+		}
+
 		alloc := &core.WishlistAllocation{
 			WishlistItemID: sim.ItemID,
 			UserUUID:       userUUID,
 			AmountE5:       sim.AllocatedE5,
 			SourceType:     "cycle_surplus",
 			CycleDate:      cycleDate,
+			TransactionID:  txnID,
 		}
 
 		if _, err := e.repos.Wishlist.CreateWishlistAllocation(alloc, tx); err != nil {
@@ -347,13 +368,17 @@ func (e *WishlistEngine) ApplySurplusDistribution(ctx context.Context, userUUID 
 	return simulations, nil
 }
 
-// ApplyManualAllocation allocates funds to a specific wishlist item, records the allocation, and updates saved amount/status.
-func (e *WishlistEngine) ApplyManualAllocation(ctx context.Context, userUUID uuid.UUID, itemID uuid.UUID, amountE5 int64, asOf time.Time) (*core.ItemAllocationSimulation, error) {
+// ApplyManualAllocation allocates funds to a specific wishlist item, records the allocation and ledger transaction, and updates saved amount/status.
+func (e *WishlistEngine) ApplyManualAllocation(ctx context.Context, userUUID uuid.UUID, itemID uuid.UUID, amountE5 int64, paymentMethod string, asOf time.Time) (*core.ItemAllocationSimulation, error) {
 	if userUUID == uuid.Nil {
 		return nil, errors.New("user UUID is required")
 	}
 	if itemID == uuid.Nil {
 		return nil, errors.New("item ID is required")
+	}
+
+	if paymentMethod == "" {
+		paymentMethod = "bank_account"
 	}
 
 	item, err := e.repos.Wishlist.GetWishlistItemByID(itemID)
@@ -371,7 +396,10 @@ func (e *WishlistEngine) ApplyManualAllocation(ctx context.Context, userUUID uui
 		return nil, errors.New("wishlist item is already fulfilled")
 	}
 
-	if amountE5 <= 0 {
+	if amountE5 < 0 {
+		return nil, errors.New("allocation amount cannot be negative")
+	}
+	if amountE5 == 0 || amountE5 > needed {
 		amountE5 = needed
 	}
 
@@ -386,12 +414,33 @@ func (e *WishlistEngine) ApplyManualAllocation(ctx context.Context, userUUID uui
 	}
 	defer tx.Rollback()
 
+	var txnID *uuid.UUID
+	if e.repos.Transaction != nil {
+		txn := &core.Transaction{
+			UserID:         userUUID,
+			AmountE5:       amountE5,
+			Type:           core.TxnTypeDebit,
+			PaymentMethod:  paymentMethod,
+			CountryISO:     "IN",
+			CreatedAt:      asOf,
+			Description:    "Wishlist: " + item.Title,
+			WishlistItemID: &item.ID,
+		}
+		createdTxnID, err := e.repos.Transaction.CreateTransaction(txn, tx)
+		if err != nil {
+			e.logger.Error("Failed to create transaction for manual allocation", zap.Error(err))
+			return nil, err
+		}
+		txnID = &createdTxnID
+	}
+
 	alloc := &core.WishlistAllocation{
 		WishlistItemID: item.ID,
 		UserUUID:       userUUID,
 		AmountE5:       amountE5,
 		SourceType:     "manual",
 		CycleDate:      asOf,
+		TransactionID:  txnID,
 	}
 
 	if _, err := e.repos.Wishlist.CreateWishlistAllocation(alloc, tx); err != nil {

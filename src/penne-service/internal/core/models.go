@@ -30,6 +30,8 @@ type Transaction struct {
 	CountryISO       string     `json:"country_iso2" db:"country_iso2"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	ShortcutIntentID *uuid.UUID `json:"shortcut_intent_id" db:"shortcut_intent_id"`
+	Description      string     `json:"description" db:"description"`
+	WishlistItemID   *uuid.UUID `json:"wishlist_item_id,omitempty" db:"wishlist_item_id"`
 }
 
 type TransactionRepository interface {
