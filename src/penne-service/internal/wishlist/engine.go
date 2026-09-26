@@ -346,3 +346,93 @@ func (e *WishlistEngine) ApplySurplusDistribution(ctx context.Context, userUUID 
 
 	return simulations, nil
 }
+
+// ApplyManualAllocation allocates funds to a specific wishlist item, records the allocation, and updates saved amount/status.
+func (e *WishlistEngine) ApplyManualAllocation(ctx context.Context, userUUID uuid.UUID, itemID uuid.UUID, amountE5 int64, asOf time.Time) (*core.ItemAllocationSimulation, error) {
+	if userUUID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	if itemID == uuid.Nil {
+		return nil, errors.New("item ID is required")
+	}
+
+	item, err := e.repos.Wishlist.GetWishlistItemByID(itemID)
+	if err != nil {
+		e.logger.Error("Failed to fetch wishlist item for allocation", zap.Error(err), zap.String("item_id", itemID.String()))
+		return nil, err
+	}
+
+	if item.UserUUID != userUUID {
+		return nil, errors.New("item does not belong to user")
+	}
+
+	needed := item.TargetAmountE5 - item.SavedAmountE5
+	if needed <= 0 {
+		return nil, errors.New("wishlist item is already fulfilled")
+	}
+
+	if amountE5 <= 0 {
+		amountE5 = needed
+	}
+
+	prevSaved := item.SavedAmountE5
+	newSaved := prevSaved + amountE5
+	isFulfilled := newSaved >= item.TargetAmountE5
+
+	tx, err := e.db.BeginTx(ctx, nil)
+	if err != nil {
+		e.logger.Error("Failed to begin transaction for manual allocation", zap.Error(err))
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	alloc := &core.WishlistAllocation{
+		WishlistItemID: item.ID,
+		UserUUID:       userUUID,
+		AmountE5:       amountE5,
+		SourceType:     "manual",
+		CycleDate:      asOf,
+	}
+
+	if _, err := e.repos.Wishlist.CreateWishlistAllocation(alloc, tx); err != nil {
+		e.logger.Error("Failed to create wishlist allocation", zap.Error(err), zap.String("item_id", item.ID.String()))
+		return nil, err
+	}
+
+	item.SavedAmountE5 = newSaved
+	if isFulfilled {
+		item.Status = "fulfilled"
+	}
+
+	if err := e.repos.Wishlist.UpdateWishlistItem(item, tx); err != nil {
+		e.logger.Error("Failed to update item saved amount", zap.Error(err), zap.String("item_id", item.ID.String()))
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		e.logger.Error("Failed to commit manual allocation transaction", zap.Error(err))
+		return nil, err
+	}
+
+	e.logger.Info("Successfully applied manual wishlist allocation",
+		zap.String("user_uuid", userUUID.String()),
+		zap.String("item_id", item.ID.String()),
+		zap.Int64("allocated_e5", amountE5),
+	)
+
+	w := item.Priority * item.Urgency
+	if w <= 0 {
+		w = 1
+	}
+
+	return &core.ItemAllocationSimulation{
+		ItemID:          item.ID,
+		ItemTitle:       item.Title,
+		AllocatedE5:     amountE5,
+		PreviousSavedE5: prevSaved,
+		NewSavedE5:      newSaved,
+		TargetAmountE5:  item.TargetAmountE5,
+		IsFulfilled:     isFulfilled,
+		Weight:          w,
+	}, nil
+}

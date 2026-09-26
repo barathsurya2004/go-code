@@ -639,6 +639,12 @@ func TestWishlistServiceHandler(t *testing.T) {
 		rec2 := httptest.NewRecorder()
 		h2.UpdateWishlistItem(rec2, req2)
 		assert.Equal(t, http.StatusOK, rec2.Code)
+
+		// Invalid JSON
+		req3 := httptest.NewRequest(http.MethodPut, "/wishlist", bytes.NewBufferString(`invalid-json`))
+		rec3 := httptest.NewRecorder()
+		h2.UpdateWishlistItem(rec3, req3)
+		assert.Equal(t, http.StatusBadRequest, rec3.Code)
 	})
 
 	t.Run("DeleteWishlistItem - Error Cases", func(t *testing.T) {
@@ -875,6 +881,98 @@ func TestWishlistServiceHandler(t *testing.T) {
 		rec5 := httptest.NewRecorder()
 		h5.UpdateBudgetSettings(rec5, req5)
 		assert.Equal(t, http.StatusBadRequest, rec5.Code)
+	})
+
+	t.Run("ManualAllocate", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+
+		item := &core.WishlistItem{
+			ID:             testItemID,
+			UserUUID:       testUserUUID,
+			Title:          "Laptop",
+			TargetAmountE5: 100000,
+			SavedAmountE5:  20000,
+			Priority:       5,
+			Urgency:        4,
+			Status:         "active",
+		}
+
+		wishlistRepo := &mockWishlistRepo{
+			getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				if id == testItemID {
+					cp := *item
+					return &cp, nil
+				}
+				return nil, errors.New("not found")
+			},
+			createAllocFn: func(alloc *core.WishlistAllocation, tx *sql.Tx) (uuid.UUID, error) {
+				return uuid.New(), nil
+			},
+			updateItemFn: func(updated *core.WishlistItem, tx *sql.Tx) error {
+				return nil
+			},
+		}
+
+		handler := NewWishlistServiceHandler(core.RepoContainer{Wishlist: wishlistRepo}, logger, db, nil)
+
+		// 1. Missing user UUID
+		req1 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate", nil)
+		rec1 := httptest.NewRecorder()
+		handler.ManualAllocate(rec1, req1)
+		assert.Equal(t, http.StatusBadRequest, rec1.Code)
+
+		// 2. Missing item ID
+		req2 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate", bytes.NewBufferString(`{"amount_e5": 1000}`))
+		req2 = req2.WithContext(context.WithValue(req2.Context(), "user_uuid", testUserUUID))
+		rec2 := httptest.NewRecorder()
+		handler.ManualAllocate(rec2, req2)
+		assert.Equal(t, http.StatusBadRequest, rec2.Code)
+
+		// 3. Success allocation
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+		payload := `{"item_id": "` + testItemID.String() + `", "amount_e5": 30000}`
+		req3 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate", bytes.NewBufferString(payload))
+		req3 = req3.WithContext(context.WithValue(req3.Context(), "user_uuid", testUserUUID))
+		rec3 := httptest.NewRecorder()
+		handler.ManualAllocate(rec3, req3)
+		assert.Equal(t, http.StatusOK, rec3.Code)
+
+		var resp map[string]interface{}
+		json.Unmarshal(rec3.Body.Bytes(), &resp)
+		assert.Equal(t, "Money allocated successfully", resp["message"])
+
+		// 4. Query param fallback with empty body
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+		req4 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate?item_id="+testItemID.String(), bytes.NewBufferString(`{}`))
+		req4 = req4.WithContext(context.WithValue(req4.Context(), "user_uuid", testUserUUID))
+		rec4 := httptest.NewRecorder()
+		handler.ManualAllocate(rec4, req4)
+		assert.Equal(t, http.StatusOK, rec4.Code)
+
+		// 5. Query param fallback with invalid json
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+		req5 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate?id="+testItemID.String(), bytes.NewBufferString(`invalid`))
+		req5 = req5.WithContext(context.WithValue(req5.Context(), "user_uuid", testUserUUID))
+		rec5 := httptest.NewRecorder()
+		handler.ManualAllocate(rec5, req5)
+		assert.Equal(t, http.StatusOK, rec5.Code)
+
+		// 6. Engine error
+		errWishlistRepo := &mockWishlistRepo{
+			getItemByIDFn: func(id uuid.UUID) (*core.WishlistItem, error) {
+				return nil, errors.New("not found")
+			},
+		}
+		hErr := NewWishlistServiceHandler(core.RepoContainer{Wishlist: errWishlistRepo}, logger, db, nil)
+		req6 := httptest.NewRequest(http.MethodPost, "/wishlist/allocate?id="+testItemID.String(), bytes.NewBufferString(`{}`))
+		req6 = req6.WithContext(context.WithValue(req6.Context(), "user_uuid", testUserUUID))
+		rec6 := httptest.NewRecorder()
+		hErr.ManualAllocate(rec6, req6)
+		assert.Equal(t, http.StatusBadRequest, rec6.Code)
 	})
 }
 

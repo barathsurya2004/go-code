@@ -324,3 +324,63 @@ func (h *WishlistServiceHandler) UpdateBudgetSettings(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "budget settings updated successfully"})
 }
+
+func (h *WishlistServiceHandler) ManualAllocate(w http.ResponseWriter, r *http.Request) {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		http.Error(w, "Missing user UUID", http.StatusBadRequest)
+		h.logger.Error("Missing user UUID in context/query")
+		return
+	}
+
+	type request struct {
+		ItemID   uuid.UUID `json:"item_id"`
+		AmountE5 int64     `json:"amount_e5"`
+	}
+
+	var req request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		idStr := r.URL.Query().Get("id")
+		if idStr == "" {
+			idStr = r.URL.Query().Get("item_id")
+		}
+		if parsed, err2 := uuid.Parse(idStr); err2 == nil {
+			req.ItemID = parsed
+		} else {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			h.logger.Error("Failed to decode manual allocate payload", zap.Error(err))
+			return
+		}
+	}
+
+	if req.ItemID == uuid.Nil {
+		idStr := r.URL.Query().Get("id")
+		if idStr == "" {
+			idStr = r.URL.Query().Get("item_id")
+		}
+		if parsed, err := uuid.Parse(idStr); err == nil {
+			req.ItemID = parsed
+		}
+	}
+
+	if req.ItemID == uuid.Nil {
+		http.Error(w, "Missing wishlist item ID", http.StatusBadRequest)
+		h.logger.Error("Missing wishlist item ID for manual allocation")
+		return
+	}
+
+	now := utils.NowUTC()
+	allocResult, err := h.engine.ApplyManualAllocation(r.Context(), userUUID, req.ItemID, req.AmountE5, now)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.logger.Error("Failed to apply manual allocation", zap.Error(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":    "Money allocated successfully",
+		"allocation": allocResult,
+	})
+}

@@ -108,6 +108,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/wishlist", app.wishlistHandler.DeleteWishlistItem).Methods("DELETE")
 	mux.HandleFunc("/wishlist/forecast", app.wishlistHandler.GetForecast).Methods("GET")
 	mux.HandleFunc("/wishlist/distribute", app.wishlistHandler.DistributeSurplus).Methods("POST")
+	mux.HandleFunc("/wishlist/allocate", app.wishlistHandler.ManualAllocate).Methods("POST")
 
 	// apis
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
