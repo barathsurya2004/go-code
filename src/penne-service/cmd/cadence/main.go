@@ -18,7 +18,8 @@ func buildApp(opts ...fx.Option) *fx.App {
 	return fx.New(baseOpts...)
 }
 
+var appFactory = buildApp
+
 func main() {
-	app := buildApp()
-	app.Run()
+	appFactory().Run()
 }

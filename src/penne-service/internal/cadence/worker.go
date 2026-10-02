@@ -20,7 +20,7 @@ import (
 var registerWorkflowOnce sync.Once
 var registerActivitiesOnce sync.Once
 
-// RegisterWorkflowsAndActivities registers all workflows and activities with Cadence.
+// RegisterActivities registers all activities with Cadence.
 func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger) {
 	transactionAct := activities.NewTransactionActivities(repos, logger)
 	userAct := activities.NewUserActivities(repos, logger)
@@ -60,6 +60,7 @@ func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger
 	})
 }
 
+// RegisterWorkflows registers all workflows with Cadence.
 func RegisterWorkflows() {
 	registerWorkflowOnce.Do(func() {
 		workflow.RegisterWithOptions(workflows.CreateTransactionWorkflow, workflow.RegisterOptions{Name: "CreateTransactionWorkflow"})
@@ -73,7 +74,33 @@ func RegisterWorkflows() {
 		workflow.RegisterWithOptions(workflows.RenewSubscriptionWorkflow, workflow.RegisterOptions{Name: "RenewSubscriptionWorkflow"})
 		workflow.RegisterWithOptions(workflows.ScanAndRenewDueSubscriptionsWorkflow, workflow.RegisterOptions{Name: "ScanAndRenewDueSubscriptionsWorkflow"})
 	})
+}
 
+// workerNewFn is the factory used to create a Cadence worker. It is a package-level
+// variable so tests can inject a mock factory without connecting to a live Cadence server.
+var workerNewFn = func(svc workflowserviceclient.Interface, domain, taskList string, opts worker.Options) (worker.Worker, error) {
+	return worker.NewV2(svc, domain, taskList, opts)
+}
+
+// attachWorkerLifecycle appends OnStart and OnStop lifecycle hooks for w to lc.
+// logLabel (e.g., "" or " email") is embedded in log messages.
+func attachWorkerLifecycle(lc fx.Lifecycle, w worker.Worker, cfg *CadenceConfig, taskList, logLabel string, logger *zap.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if err := w.Start(); err != nil {
+				logger.Error("Failed to start Cadence"+logLabel+" worker", zap.Error(err))
+				return err
+			}
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			w.Stop()
+			logger.Info("Cadence"+logLabel+" worker stopped successfully",
+				zap.String("domain", cfg.Domain),
+				zap.String("task_list", taskList))
+			return nil
+		},
+	})
 }
 
 // StartWorker creates, registers, and starts a standalone Cadence worker instance.
@@ -88,37 +115,18 @@ func StartWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConf
 	RegisterWorkflows()
 	RegisterActivities(repos, db, logger)
 
-	workerOptions := worker.Options{
-		Logger: logger,
-	}
-
-	w, err := worker.NewV2(serviceClient, cfg.Domain, TaskListName, workerOptions)
+	w, err := workerNewFn(serviceClient, cfg.Domain, TaskListName, worker.Options{Logger: logger})
 	if err != nil {
 		logger.Error("Failed to create Cadence worker", zap.Error(err))
 		return nil, err
 	}
 
-	lc.Append(
-		fx.Hook{
-			OnStart: func(ctx context.Context) error {
-				if err := w.Start(); err != nil {
-					logger.Error("Failed to start Cadence worker", zap.Error(err))
-					return err
-				}
-				return nil
-			},
-			OnStop: func(ctx context.Context) error {
-				w.Stop()
-				logger.Info("Cadence worker stopped successfully", zap.String("domain", cfg.Domain), zap.String("task_list", TaskListName))
-				return nil
-			},
-		})
-
+	attachWorkerLifecycle(lc, w, cfg, TaskListName, "", logger)
 	logger.Info("Cadence worker successfully started", zap.String("domain", cfg.Domain), zap.String("task_list", TaskListName))
 	return w, nil
 }
 
-// StartEmailWorker creates, registers, and starts a standalone Cadence worker instance listening specifically on the email task list.
+// StartEmailWorker creates, registers, and starts a standalone Cadence email worker instance.
 func StartEmailWorker(serviceClient workflowserviceclient.Interface, cfg *CadenceConfig, logger *zap.Logger, repos core.RepoContainer, db *sql.DB, lc fx.Lifecycle) (worker.Worker, error) {
 	if serviceClient == nil {
 		return nil, errors.New("serviceClient is required")
@@ -130,32 +138,13 @@ func StartEmailWorker(serviceClient workflowserviceclient.Interface, cfg *Cadenc
 	RegisterWorkflows()
 	RegisterActivities(repos, db, logger)
 
-	workerOptions := worker.Options{
-		Logger: logger,
-	}
-
-	w, err := worker.NewV2(serviceClient, cfg.Domain, EmailTaskListName, workerOptions)
+	w, err := workerNewFn(serviceClient, cfg.Domain, EmailTaskListName, worker.Options{Logger: logger})
 	if err != nil {
 		logger.Error("Failed to create Cadence email worker", zap.Error(err))
 		return nil, err
 	}
 
-	lc.Append(
-		fx.Hook{
-			OnStart: func(ctx context.Context) error {
-				if err := w.Start(); err != nil {
-					logger.Error("Failed to start Cadence email worker", zap.Error(err))
-					return err
-				}
-				return nil
-			},
-			OnStop: func(ctx context.Context) error {
-				w.Stop()
-				logger.Info("Cadence email worker stopped successfully", zap.String("domain", cfg.Domain), zap.String("task_list", EmailTaskListName))
-				return nil
-			},
-		})
-
+	attachWorkerLifecycle(lc, w, cfg, EmailTaskListName, " email", logger)
 	logger.Info("Cadence email worker successfully started", zap.String("domain", cfg.Domain), zap.String("task_list", EmailTaskListName))
 	return w, nil
 }

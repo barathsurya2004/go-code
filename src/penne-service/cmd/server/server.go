@@ -124,9 +124,13 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 
 	// apis
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
+	mux.HandleFunc("/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
 	mux.HandleFunc("/api/create-new-intent", app.budgetingHandler.CreateNewShortcutIntent).Methods("POST")
+	mux.HandleFunc("/create-new-intent", app.budgetingHandler.CreateNewShortcutIntent).Methods("POST")
 	mux.HandleFunc("/api/dashboard-summary", app.transactionHandler.DashboardSummaryHandler).Methods("GET")
+	mux.HandleFunc("/dashboard-summary", app.transactionHandler.DashboardSummaryHandler).Methods("GET")
 	mux.HandleFunc("/api/insights/monthly", app.transactionHandler.MonthlyInsightsHandler).Methods("GET")
+	mux.HandleFunc("/insights/monthly", app.transactionHandler.MonthlyInsightsHandler).Methods("GET")
 	mux.Use(CORSMiddleware)
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }
@@ -176,7 +180,7 @@ func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 			userToken, err := Tokenrepo.GetToken(tokenUUID)
 
 			if err != nil {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				http.Error(w, "Invalid token: "+err.Error(), http.StatusUnauthorized)
 				return
 			}
 
