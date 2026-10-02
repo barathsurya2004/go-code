@@ -37,12 +37,20 @@ func (m *mockEnvelopeGroupRepo) CreateEnvelopeGroup(envelopeGroup *core.Envelope
 
 type mockEnvelopeRepo struct {
 	core.EnvelopeRepository
-	createFn func(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error)
+	createFn    func(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error)
+	getByNameFn func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error)
 }
 
 func (m *mockEnvelopeRepo) CreateEnvelope(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) {
 	if m.createFn != nil {
 		return m.createFn(envelope, Tx)
+	}
+	return uuid.Nil, nil
+}
+
+func (m *mockEnvelopeRepo) GetEnvelopeIdByName(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+	if m.getByNameFn != nil {
+		return m.getByNameFn(name, userUUID, tx)
 	}
 	return uuid.Nil, nil
 }

@@ -10,7 +10,7 @@ import (
 
 const (
 	AuthToken   = "auth_token"
-	DefaultName = "default"
+	DefaultName = "Default"
 
 	StatusPending = "PENDING"
 	StatusSettled = "SETTLED"
@@ -450,6 +450,3 @@ func (s *Subscription) RecordCharge(txnID uuid.UUID, chargedAt time.Time, rawDes
 	s.NextBillingDate = AdvanceBillingDate(s.NextBillingDate, s.BillingCycle)
 	s.UpdatedAt = chargedAt
 }
-
-
-

@@ -14,10 +14,10 @@ import (
 
 type mockTxnRepo struct {
 	core.TransactionRepository
-	createTxnFn        func(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error)
-	getTxnByTimeFn     func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
-	updateTxnFn        func(txn *core.Transaction, Tx *sql.Tx) error
-	getTxnByUUIDFn     func(id uuid.UUID) (*core.Transaction, error)
+	createTxnFn    func(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error)
+	getTxnByTimeFn func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
+	updateTxnFn    func(txn *core.Transaction, Tx *sql.Tx) error
+	getTxnByUUIDFn func(id uuid.UUID) (*core.Transaction, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -118,6 +118,58 @@ func TestTransactionActivities_CreateTransaction(t *testing.T) {
 	_, err = actsErr.CreateTransaction(context.Background(), core.Transaction{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+
+	// Default envelope fallback path
+	defaultEnvID := uuid.New()
+	userUUID := uuid.New()
+	var createdTxn core.Transaction
+	allocUpdated := false
+
+	mockTxnWithEnv := &mockTxnRepo{
+		createTxnFn: func(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
+			createdTxn = *txn
+			return expectedID, nil
+		},
+	}
+	mockEnv := &mockEnvelopeRepo{
+		getByNameFn: func(name string, uUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+			if name == core.DefaultName && uUUID == userUUID {
+				return defaultEnvID, nil
+			}
+			return uuid.Nil, errors.New("not found")
+		},
+	}
+	mockAlloc := &mockAllocRepo{
+		updateSpentFn: func(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error {
+			if envelopeID == defaultEnvID && amountDeltaE5 == 5000000 {
+				allocUpdated = true
+			}
+			return nil
+		},
+	}
+	actsWithEnv := NewTransactionActivities(core.RepoContainer{
+		Transaction: mockTxnWithEnv,
+		Envelope:    mockEnv,
+		Allocation:  mockAlloc,
+	}, logger)
+
+	resWithEnv, err := actsWithEnv.CreateTransaction(context.Background(), core.Transaction{
+		UserID:   userUUID,
+		Type:     core.TxnTypeDebit,
+		AmountE5: 5000000,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resWithEnv == nil || *resWithEnv != expectedID {
+		t.Fatalf("expected %v, got %v", expectedID, resWithEnv)
+	}
+	if createdTxn.EnvelopeID == nil || *createdTxn.EnvelopeID != defaultEnvID {
+		t.Errorf("expected transaction to have default envelope %v, got %v", defaultEnvID, createdTxn.EnvelopeID)
+	}
+	if !allocUpdated {
+		t.Error("expected allocation spent amount to be updated for default envelope")
 	}
 }
 
@@ -541,5 +593,3 @@ func TestTransactionActivities_UpdateWishlistSpentActivity(t *testing.T) {
 		t.Fatalf("expected fulfilled item, got %v", fulfilledItem)
 	}
 }
-
-

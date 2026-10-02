@@ -140,7 +140,7 @@ func (r *pgEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.Env
 }
 
 func (r *pgEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
-	query := `SELECT id FROM envelope WHERE name = $1 AND user_uuid = $2`
+	query := `SELECT id FROM envelope WHERE lower(name) = lower($1) AND user_uuid = $2`
 	var row *sql.Row
 	if tx != nil {
 		row = tx.QueryRow(query, envlopeName, userUUID)

@@ -56,6 +56,12 @@ func (h *TransactionServiceHandler) CreateTransaction(w http.ResponseWriter, r *
 	if txn.CountryISO == "" {
 		txn.CountryISO = "IN"
 	}
+	if txn.EnvelopeID == nil && h.repos.Envelope != nil {
+		defaultEnvID, err := h.repos.Envelope.GetEnvelopeIdByName(core.DefaultName, userUUID, nil)
+		if err == nil && defaultEnvID != uuid.Nil {
+			txn.EnvelopeID = &defaultEnvID
+		}
+	}
 
 	// tx, err := h.db.BeginTx(r.Context(), nil)
 	// if err != nil {
@@ -246,6 +252,13 @@ func (h *TransactionServiceHandler) handleUpdateTransaction(w http.ResponseWrite
 	}
 	if txnToUpdate == nil {
 		txnToUpdate = &core.Transaction{ID: txnID}
+	}
+
+	if envelopeID == nil && h.repos.Envelope != nil && txnToUpdate.UserID != uuid.Nil {
+		defaultEnvID, err := h.repos.Envelope.GetEnvelopeIdByName(core.DefaultName, txnToUpdate.UserID, nil)
+		if err == nil && defaultEnvID != uuid.Nil {
+			envelopeID = &defaultEnvID
+		}
 	}
 
 	if h.cadenceClient != nil {
@@ -489,6 +502,12 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		}
 		return &txnID, nil
 	} else {
+		if txn.EnvelopeID == nil && h.repos.Envelope != nil && userUUID != uuid.Nil {
+			defaultEnvID, err := h.repos.Envelope.GetEnvelopeIdByName(core.DefaultName, userUUID, Tx)
+			if err == nil && defaultEnvID != uuid.Nil {
+				txn.EnvelopeID = &defaultEnvID
+			}
+		}
 		txnID, err := h.transactionRepo.CreateTransaction(txn, Tx)
 		if err != nil {
 			h.logger.Error("Failed to create transaction and workflow", zap.Error(err))
@@ -756,5 +775,3 @@ func (h *TransactionServiceHandler) MonthlyInsightsHandler(w http.ResponseWriter
 		h.logger.Error("Failed to encode monthly insights response", zap.Error(err))
 	}
 }
-
-

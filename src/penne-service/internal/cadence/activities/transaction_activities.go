@@ -23,6 +23,14 @@ func NewTransactionActivities(repos core.RepoContainer, logger *zap.Logger) *Tra
 }
 
 func (a *TransactionActivities) CreateTransaction(ctx context.Context, txn core.Transaction) (*uuid.UUID, error) {
+	if txn.EnvelopeID == nil && a.Repos.Envelope != nil && txn.UserID != uuid.Nil {
+		if defaultEnvID, err := a.Repos.Envelope.GetEnvelopeIdByName(core.DefaultName, txn.UserID, nil); err == nil && defaultEnvID != uuid.Nil {
+			txn.EnvelopeID = &defaultEnvID
+			if txn.Type == core.TxnTypeDebit && a.Repos.Allocation != nil {
+				_ = a.Repos.Allocation.UpdateSpentAmount(defaultEnvID, txn.CreatedAt, txn.AmountE5, nil)
+			}
+		}
+	}
 	txnID, err := a.Repos.Transaction.CreateTransaction(&txn, nil)
 	if err != nil {
 		a.logger.Error("Failed to create transaction and workflow", zap.Error(err))

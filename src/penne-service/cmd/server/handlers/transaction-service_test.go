@@ -46,11 +46,11 @@ func (m *mockCadenceClient) ExecuteWorkflow(ctx context.Context, options client.
 }
 
 type mockTxnRepo struct {
-	createTransactionFn         func(txn *core.Transaction) (uuid.UUID, error)
-	getTransactionByUUIDFn      func(id uuid.UUID) (*core.Transaction, error)
-	getTransactionsByUserUUIDFn func(userUUID uuid.UUID) ([]*core.Transaction, error)
-	updateTransactionFn         func(txn *core.Transaction) error
-	deleteTransactionFn         func(id uuid.UUID) error
+	createTransactionFn                 func(txn *core.Transaction) (uuid.UUID, error)
+	getTransactionByUUIDFn              func(id uuid.UUID) (*core.Transaction, error)
+	getTransactionsByUserUUIDFn         func(userUUID uuid.UUID) ([]*core.Transaction, error)
+	updateTransactionFn                 func(txn *core.Transaction) error
+	deleteTransactionFn                 func(id uuid.UUID) error
 	getTransactionByTimeFn              func(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 	getTransactionByAmountAndTimeFn     func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 	getDashboardSummaryFn               func(uuid uuid.UUID) (*core.DashboardSummary, error)
@@ -898,7 +898,6 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
-
 	t.Run("CreateTransactionWorkflow - Success with Pending Shortcut Intent", func(t *testing.T) {
 		txnID := uuid.New()
 		intentID := uuid.New()
@@ -1297,7 +1296,7 @@ func TestTransactionServiceHandler_ChangeTransactionToTransfer(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 		}
-		if !capturedLower.Equal(customTime.Add(-5 * time.Minute)) || !capturedUpper.Equal(customTime.Add(5 * time.Minute)) {
+		if !capturedLower.Equal(customTime.Add(-5*time.Minute)) || !capturedUpper.Equal(customTime.Add(5*time.Minute)) {
 			t.Errorf("unexpected time window: [%v, %v]", capturedLower, capturedUpper)
 		}
 
@@ -1621,7 +1620,142 @@ Available Limit: INR 38413.57 .`,
 			t.Error("expected getMonthlyInsightsFn to be called")
 		}
 	})
+
+	t.Run("CreateTransaction - Defaults Envelope When Nil", func(t *testing.T) {
+		defaultEnvUUID := uuid.New()
+		var assignedEnvID *uuid.UUID
+
+		mockEnv := &mockEnvelopeRepo{
+			getByNameFn: func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+				if name == core.DefaultName {
+					return defaultEnvUUID, nil
+				}
+				return uuid.Nil, errors.New("not found")
+			},
+		}
+
+		txnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				assignedEnvID = txn.EnvelopeID
+				return uuid.New(), nil
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, low, high time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{Envelope: mockEnv})
+
+		body := map[string]interface{}{
+			"amount_e5":      1000000,
+			"txn_type":       "debit",
+			"payment_method": "bank_card",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/transaction", bytes.NewBuffer(jsonBytes))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.CreateTransaction(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
+		}
+		if assignedEnvID == nil || *assignedEnvID != defaultEnvUUID {
+			t.Errorf("expected envelope ID to default to %v, got %v", defaultEnvUUID, assignedEnvID)
+		}
+	})
+
+	t.Run("CreateTransactionWorkflow - Fallback Defaults Envelope When Nil", func(t *testing.T) {
+		defaultEnvUUID := uuid.New()
+		var assignedEnvID *uuid.UUID
+
+		mockEnv := &mockEnvelopeRepo{
+			getByNameFn: func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+				if name == core.DefaultName {
+					return defaultEnvUUID, nil
+				}
+				return uuid.Nil, errors.New("not found")
+			},
+		}
+
+		txnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				assignedEnvID = txn.EnvelopeID
+				return uuid.New(), nil
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, low, high time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{Envelope: mockEnv})
+
+		txn := &core.Transaction{
+			AmountE5:      5000000,
+			Type:          "debit",
+			PaymentMethod: "upi",
+		}
+		txnID, err := h.CreateTransactionWorkflow(txn, validUserUUID, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if txnID == nil {
+			t.Fatal("expected txnID, got nil")
+		}
+		if assignedEnvID == nil || *assignedEnvID != defaultEnvUUID {
+			t.Errorf("expected assigned envelope to be %v, got %v", defaultEnvUUID, assignedEnvID)
+		}
+	})
+
+	t.Run("handleUpdateTransaction - Defaults Envelope When Nil", func(t *testing.T) {
+		defaultEnvUUID := uuid.New()
+		var updatedEnvID *uuid.UUID
+
+		mockEnv := &mockEnvelopeRepo{
+			getByNameFn: func(name string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) {
+				if name == core.DefaultName {
+					return defaultEnvUUID, nil
+				}
+				return uuid.Nil, errors.New("not found")
+			},
+		}
+
+		existingTxn := &core.Transaction{
+			ID:       uuid.New(),
+			UserID:   validUserUUID,
+			AmountE5: 3000000,
+			Type:     "debit",
+		}
+		txnRepo := &mockTxnRepo{
+			getTransactionByUUIDFn: func(id uuid.UUID) (*core.Transaction, error) {
+				return existingTxn, nil
+			},
+			updateTransactionFn: func(txn *core.Transaction) error {
+				updatedEnvID = txn.EnvelopeID
+				return nil
+			},
+		}
+		h := NewTransactionServiceHandler(txnRepo, &mockShortcutIntentRepo{}, logger, db, nil, core.RepoContainer{Envelope: mockEnv})
+
+		body := map[string]interface{}{
+			"id":             existingTxn.ID.String(),
+			"amount_e5":      3000000,
+			"txn_type":       "debit",
+			"payment_method": "card",
+		}
+		jsonBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("PUT", "/transaction", bytes.NewBuffer(jsonBytes))
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.UpdateTransaction(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rr.Code)
+		}
+		if updatedEnvID == nil || *updatedEnvID != defaultEnvUUID {
+			t.Errorf("expected updated envelope ID to default to %v, got %v", defaultEnvUUID, updatedEnvID)
+		}
+	})
 }
-
-
-

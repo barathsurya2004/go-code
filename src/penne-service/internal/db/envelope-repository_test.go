@@ -385,7 +385,7 @@ func TestPgEnvelopeRepo_GetEnvelopeIdByName(t *testing.T) {
 	envName := "Groceries"
 
 	t.Run("Query Error", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+		mock.ExpectQuery("SELECT id FROM envelope WHERE lower\\(name\\) = lower\\(\\$1\\) AND user_uuid = \\$2").
 			WithArgs(envName, userUUID).
 			WillReturnError(sql.ErrNoRows)
 
@@ -396,7 +396,7 @@ func TestPgEnvelopeRepo_GetEnvelopeIdByName(t *testing.T) {
 	})
 
 	t.Run("Success Without Tx", func(t *testing.T) {
-		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+		mock.ExpectQuery("SELECT id FROM envelope WHERE lower\\(name\\) = lower\\(\\$1\\) AND user_uuid = \\$2").
 			WithArgs(envName, userUUID).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(envID))
 
@@ -412,7 +412,7 @@ func TestPgEnvelopeRepo_GetEnvelopeIdByName(t *testing.T) {
 	t.Run("Success With Tx", func(t *testing.T) {
 		mock.ExpectBegin()
 		tx, _ := db.Begin()
-		mock.ExpectQuery("SELECT id FROM envelope WHERE name = \\$1 AND user_uuid = \\$2").
+		mock.ExpectQuery("SELECT id FROM envelope WHERE lower\\(name\\) = lower\\(\\$1\\) AND user_uuid = \\$2").
 			WithArgs(envName, userUUID).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(envID))
 
