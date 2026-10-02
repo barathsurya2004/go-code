@@ -686,6 +686,29 @@ func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int,
 		}
 	}
 
+	resolveTxnDetails := func(t *core.Transaction) (desc, category, envName string) {
+		if t.EnvelopeID != nil {
+			if info, ok := envelopeMap[t.EnvelopeID.String()]; ok {
+				envName = info.name
+				category = info.group
+			}
+		}
+		if category == "" {
+			category = "General"
+		}
+		desc = strings.TrimSpace(t.Description)
+		if desc == "" || strings.EqualFold(desc, "discretionary purchase") || strings.EqualFold(desc, "single expense") {
+			if envName != "" {
+				desc = envName
+			} else if category != "" && category != "General" {
+				desc = category
+			} else {
+				desc = "Discretionary Purchase"
+			}
+		}
+		return desc, category, envName
+	}
+
 	// Peak spending day
 	var peakDay *core.PeakSpendDayInfo
 	var maxDailySpendE5 int64
@@ -699,16 +722,16 @@ func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int,
 			})
 			var topList []core.PeakSpendDayTransaction
 			for i := 0; i < len(sortedTxns) && i < 3; i++ {
-				desc := sortedTxns[i].Description
-				if desc == "" {
-					desc = "Discretionary Purchase"
-				}
+				t := sortedTxns[i]
+				desc, cat, env := resolveTxnDetails(t)
 				topList = append(topList, core.PeakSpendDayTransaction{
-					ID:            sortedTxns[i].ID.String(),
+					ID:            t.ID.String(),
 					Description:   desc,
-					AmountE5:      sortedTxns[i].AmountE5,
-					PaymentMethod: sortedTxns[i].PaymentMethod,
-					Date:          sortedTxns[i].CreatedAt.UTC().Format(time.RFC3339),
+					AmountE5:      t.AmountE5,
+					PaymentMethod: t.PaymentMethod,
+					Date:          t.CreatedAt.UTC().Format(time.RFC3339),
+					Category:      cat,
+					EnvelopeName:  env,
 				})
 			}
 			peakDay = &core.PeakSpendDayInfo{
@@ -830,16 +853,15 @@ func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int,
 			daySpentE5 = bucket.totalE5
 			txnCount = len(bucket.txns)
 			for _, t := range bucket.txns {
-				desc := t.Description
-				if desc == "" {
-					desc = "Discretionary Purchase"
-				}
+				desc, cat, env := resolveTxnDetails(t)
 				dayTxns = append(dayTxns, core.PeakSpendDayTransaction{
 					ID:            t.ID.String(),
 					Description:   desc,
 					AmountE5:      t.AmountE5,
 					PaymentMethod: t.PaymentMethod,
 					Date:          t.CreatedAt.UTC().Format(time.RFC3339),
+					Category:      cat,
+					EnvelopeName:  env,
 				})
 			}
 		}
@@ -877,16 +899,15 @@ func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int,
 
 	var largestTxnInfo *core.PeakSpendDayTransaction
 	if largestTxn != nil {
-		desc := largestTxn.Description
-		if desc == "" {
-			desc = "Single Expense"
-		}
+		desc, cat, env := resolveTxnDetails(largestTxn)
 		largestTxnInfo = &core.PeakSpendDayTransaction{
 			ID:            largestTxn.ID.String(),
 			Description:   desc,
 			AmountE5:      largestTxn.AmountE5,
 			PaymentMethod: largestTxn.PaymentMethod,
 			Date:          largestTxn.CreatedAt.UTC().Format(time.RFC3339),
+			Category:      cat,
+			EnvelopeName:  env,
 		}
 	}
 

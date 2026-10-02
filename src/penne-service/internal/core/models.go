@@ -207,6 +207,8 @@ type PeakSpendDayTransaction struct {
 	AmountE5      int64  `json:"amount_e5"`
 	PaymentMethod string `json:"payment_method,omitempty"`
 	Date          string `json:"date,omitempty"`
+	Category      string `json:"category,omitempty"`
+	EnvelopeName  string `json:"envelope_name,omitempty"`
 }
 
 type PeakSpendDayInfo struct {
