@@ -79,6 +79,9 @@ func (d *dummyTxnRepo) GetDashboardSummary(uuid uuid.UUID) (*core.DashboardSumma
 func (d *dummyTxnRepo) GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) {
 	return nil, nil
 }
+func (d *dummyTxnRepo) GetMonthlyInsights(userUUID uuid.UUID, year int, month int) (*core.MonthlyInsightsReport, error) {
+	return &core.MonthlyInsightsReport{}, nil
+}
 
 type dummyShortcutIntentRepo struct{}
 

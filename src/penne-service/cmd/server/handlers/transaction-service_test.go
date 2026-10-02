@@ -55,6 +55,7 @@ type mockTxnRepo struct {
 	getTransactionByAmountAndTimeFn     func(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error)
 	getDashboardSummaryFn               func(uuid uuid.UUID) (*core.DashboardSummary, error)
 	getTransactionByUserUUIDPaginatedFn func(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error)
+	getMonthlyInsightsFn                func(userUUID uuid.UUID, year int, month int) (*core.MonthlyInsightsReport, error)
 }
 
 func (m *mockTxnRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) {
@@ -118,6 +119,13 @@ func (m *mockTxnRepo) GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, last
 		return m.getTransactionByUserUUIDPaginatedFn(userUUID, lastTransactionCreatedAt, lastTransactionID, limit)
 	}
 	return nil, nil
+}
+
+func (m *mockTxnRepo) GetMonthlyInsights(userUUID uuid.UUID, year int, month int) (*core.MonthlyInsightsReport, error) {
+	if m.getMonthlyInsightsFn != nil {
+		return m.getMonthlyInsightsFn(userUUID, year, month)
+	}
+	return &core.MonthlyInsightsReport{}, nil
 }
 
 func TestTransactionServiceHandler(t *testing.T) {
@@ -1518,6 +1526,102 @@ Available Limit: INR 38413.57 .`,
 			t.Errorf("expected status 400, got %d", rr.Code)
 		}
 	})
+
+	t.Run("MonthlyInsightsHandler - Missing User UUID", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("GET", "/api/insights/monthly", nil)
+		rr := httptest.NewRecorder()
+
+		h.MonthlyInsightsHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("MonthlyInsightsHandler - Invalid Year Parameter", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("GET", "/api/insights/monthly?year=invalid", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.MonthlyInsightsHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("MonthlyInsightsHandler - Invalid Month Parameter", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("GET", "/api/insights/monthly?month=99", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.MonthlyInsightsHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("MonthlyInsightsHandler - Repo Error", func(t *testing.T) {
+		txnRepo := &mockTxnRepo{
+			getMonthlyInsightsFn: func(userUUID uuid.UUID, year, month int) (*core.MonthlyInsightsReport, error) {
+				return nil, errors.New("db failure")
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("GET", "/api/insights/monthly", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.MonthlyInsightsHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", rr.Code)
+		}
+	})
+
+	t.Run("MonthlyInsightsHandler - Success with Query Params", func(t *testing.T) {
+		called := false
+		txnRepo := &mockTxnRepo{
+			getMonthlyInsightsFn: func(userUUID uuid.UUID, year, month int) (*core.MonthlyInsightsReport, error) {
+				called = true
+				if year != 2026 || month != 10 {
+					t.Errorf("unexpected year/month: %d/%d", year, month)
+				}
+				return &core.MonthlyInsightsReport{
+					Year:        2026,
+					Month:       10,
+					MonthLabel:  "October 2026",
+					DaysInMonth: 31,
+				}, nil
+			},
+		}
+		shortcutRepo := &mockShortcutIntentRepo{}
+		h := NewTransactionServiceHandler(txnRepo, shortcutRepo, logger, db, nil, core.RepoContainer{})
+
+		req := httptest.NewRequest("GET", "/api/insights/monthly?year=2026&month=10", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "user_uuid", validUserUUID))
+		rr := httptest.NewRecorder()
+
+		h.MonthlyInsightsHandler(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rr.Code)
+		}
+		if !called {
+			t.Error("expected getMonthlyInsightsFn to be called")
+		}
+	})
 }
+
 
 

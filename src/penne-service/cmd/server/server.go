@@ -126,6 +126,7 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")
 	mux.HandleFunc("/api/create-new-intent", app.budgetingHandler.CreateNewShortcutIntent).Methods("POST")
 	mux.HandleFunc("/api/dashboard-summary", app.transactionHandler.DashboardSummaryHandler).Methods("GET")
+	mux.HandleFunc("/api/insights/monthly", app.transactionHandler.MonthlyInsightsHandler).Methods("GET")
 	mux.Use(CORSMiddleware)
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }

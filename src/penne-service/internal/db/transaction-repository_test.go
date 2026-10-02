@@ -776,3 +776,294 @@ func TestPgTransactionRowsRepo_GetTransactionByAmountAndTime(t *testing.T) {
 		}
 	})
 }
+
+func TestPgTransactionRowsRepo_GetMonthlyInsights(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("unexpected error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPgTransactionRowsRepo(db)
+	userUUID := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+
+	t.Run("Validation Errors", func(t *testing.T) {
+		_, err := repo.GetMonthlyInsights(uuid.Nil, 2026, 10)
+		if err == nil || err.Error() != "user UUID is required" {
+			t.Errorf("expected user UUID error, got %v", err)
+		}
+
+		_, err = repo.GetMonthlyInsights(userUUID, 1999, 10)
+		if err == nil || err.Error() != "invalid year" {
+			t.Errorf("expected invalid year error, got %v", err)
+		}
+
+		_, err = repo.GetMonthlyInsights(userUUID, 2101, 10)
+		if err == nil || err.Error() != "invalid year" {
+			t.Errorf("expected invalid year error, got %v", err)
+		}
+
+		_, err = repo.GetMonthlyInsights(userUUID, 2026, 0)
+		if err == nil || err.Error() != "invalid month" {
+			t.Errorf("expected invalid month error, got %v", err)
+		}
+
+		_, err = repo.GetMonthlyInsights(userUUID, 2026, 13)
+		if err == nil || err.Error() != "invalid month" {
+			t.Errorf("expected invalid month error, got %v", err)
+		}
+	})
+
+	t.Run("Envelope Query Error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnError(errors.New("envelope query failed"))
+
+		_, err := repo.GetMonthlyInsights(userUUID, 2026, 10)
+		if err == nil || err.Error() != "envelope query failed" {
+			t.Errorf("expected envelope query error, got %v", err)
+		}
+	})
+
+	t.Run("Transaction Query Error", func(t *testing.T) {
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"})
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		subRows := sqlmock.NewRows([]string{"last_transaction_id", "name", "merchant_pattern"})
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnRows(subRows)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("txn query failed"))
+
+		_, err := repo.GetMonthlyInsights(userUUID, 2026, 10)
+		if err == nil || err.Error() != "txn query failed" {
+			t.Errorf("expected txn query error, got %v", err)
+		}
+	})
+
+	t.Run("Empty Month Success", func(t *testing.T) {
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"})
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		subRows := sqlmock.NewRows([]string{"last_transaction_id", "name", "merchant_pattern"})
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnRows(subRows)
+
+		txnRows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "description", "wishlist_item_id"})
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(txnRows)
+
+		prevRows := sqlmock.NewRows([]string{"sum"}).AddRow(int64(0))
+		mock.ExpectQuery("SELECT COALESCE\\(SUM\\(amount_e5\\), 0\\) FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(prevRows)
+
+		report, err := repo.GetMonthlyInsights(userUUID, 2026, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if report.TotalIncomeE5 != 0 || report.TotalExpenseE5 != 0 {
+			t.Errorf("expected 0 totals, got income %d, expense %d", report.TotalIncomeE5, report.TotalExpenseE5)
+		}
+		if report.DaysInMonth != 31 {
+			t.Errorf("expected 31 days, got %d", report.DaysInMonth)
+		}
+		if len(report.DailyHeatmap) != 31 {
+			t.Errorf("expected 31 heatmap days, got %d", len(report.DailyHeatmap))
+		}
+	})
+
+	t.Run("Full Month with Subscriptions and Discretionary", func(t *testing.T) {
+		envID := uuid.New()
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"}).
+			AddRow(envID, "Groceries", "Food")
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		subTxnID := uuid.New()
+		subRows := sqlmock.NewRows([]string{"last_transaction_id", "name", "merchant_pattern"}).
+			AddRow(&subTxnID, "Netflix", "netflix.com")
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnRows(subRows)
+
+		t1 := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+		t2 := time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC)
+		t3 := time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
+		t4 := time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC)
+
+		txnRows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "description", "wishlist_item_id"}).
+			AddRow(uuid.New(), userUUID, nil, int64(10000000), "IN", "bank_account", "credit", t1, "Salary", nil).
+			AddRow(subTxnID, userUUID, nil, int64(50000), "IN", "bank_card", "debit", t2, "Subscription: Netflix Standard", nil).
+			AddRow(uuid.New(), userUUID, &envID, int64(150000), "IN", "upi", "debit", t3, "Supermarket shopping", nil).
+			AddRow(uuid.New(), userUUID, nil, int64(250000), "IN", "bank_card", "debit", t4, "Fancy Electronics", nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(txnRows)
+
+		prevRows := sqlmock.NewRows([]string{"sum"}).AddRow(int64(400000))
+		mock.ExpectQuery("SELECT COALESCE\\(SUM\\(amount_e5\\), 0\\) FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(prevRows)
+
+		report, err := repo.GetMonthlyInsights(userUUID, 2026, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if report.TotalIncomeE5 != 10000000 {
+			t.Errorf("expected income 10000000, got %d", report.TotalIncomeE5)
+		}
+		if report.TotalExpenseE5 != 450000 {
+			t.Errorf("expected expense 450000, got %d", report.TotalExpenseE5)
+		}
+		if report.SubscriptionExpenseE5 != 50000 {
+			t.Errorf("expected sub expense 50000, got %d", report.SubscriptionExpenseE5)
+		}
+		if report.DiscretionaryExpenseE5 != 400000 {
+			t.Errorf("expected discretionary expense 400000, got %d", report.DiscretionaryExpenseE5)
+		}
+		if report.PeakDay == nil || report.PeakDay.Date != "2026-10-15" {
+			t.Errorf("expected peak day 2026-10-15, got %v", report.PeakDay)
+		}
+		if report.LargestTransaction == nil || report.LargestTransaction.AmountE5 != 250000 {
+			t.Errorf("expected largest txn 250000, got %v", report.LargestTransaction)
+		}
+		if report.PreviousMonth == nil || report.PreviousMonth.TotalExpenseE5 != 400000 {
+			t.Errorf("expected previous month 400000, got %v", report.PreviousMonth)
+		}
+		if len(report.CategorySplits) != 2 {
+			t.Errorf("expected 2 category splits, got %d", len(report.CategorySplits))
+		}
+	})
+
+	t.Run("Current Month And Pattern Matches", func(t *testing.T) {
+		now := time.Now().UTC()
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"})
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		subRows := sqlmock.NewRows([]string{"last_transaction_id", "name", "merchant_pattern"}).
+			AddRow(nil, "Spotify", "spotify.com")
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnRows(subRows)
+
+		tNow := time.Date(now.Year(), now.Month(), 1, 10, 0, 0, 0, time.UTC)
+		txnRows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "description", "wishlist_item_id"}).
+			AddRow(uuid.New(), userUUID, nil, int64(11900), "IN", "card", "debit", tNow, "spotify premium student", nil)
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(txnRows)
+
+		prevRows := sqlmock.NewRows([]string{"sum"}).AddRow(int64(0))
+		mock.ExpectQuery("SELECT COALESCE\\(SUM\\(amount_e5\\), 0\\) FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(prevRows)
+
+		report, err := repo.GetMonthlyInsights(userUUID, now.Year(), int(now.Month()))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if report.SubscriptionExpenseE5 != 11900 {
+			t.Errorf("expected 11900 sub expense, got %d", report.SubscriptionExpenseE5)
+		}
+	})
+
+	t.Run("Txn Row Scan Error", func(t *testing.T) {
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"})
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		subRows := sqlmock.NewRows([]string{"last_transaction_id", "name", "merchant_pattern"})
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnRows(subRows)
+
+		txnRows := sqlmock.NewRows([]string{"id"}).AddRow("invalid")
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(txnRows)
+
+		_, err := repo.GetMonthlyInsights(userUUID, 2026, 10)
+		if err == nil {
+			t.Errorf("expected scan error, got nil")
+		}
+	})
+
+	t.Run("Subscription Query Error and All Intensity Levels", func(t *testing.T) {
+		emptyEnvID := uuid.New()
+		envRows := sqlmock.NewRows([]string{"id", "name", "group_name"}).
+			AddRow(emptyEnvID, "", "") // empty name covers Custom Category fallback
+		mock.ExpectQuery("SELECT e.id, COALESCE\\(e.name, ''\\), COALESCE\\(eg.name, ''\\) FROM envelope e").
+			WithArgs(userUUID).
+			WillReturnRows(envRows)
+
+		// Subscription query returns error
+		mock.ExpectQuery("SELECT last_transaction_id, name, COALESCE\\(merchant_pattern, ''\\) FROM subscriptions").
+			WithArgs(userUUID).
+			WillReturnError(errors.New("sub db error"))
+
+		d1 := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+		d2 := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+		d3 := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+		d4 := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+
+		// max will be 1000000
+		// d1: 100000 (ratio 0.1 <= 0.2 -> level 1)
+		// d2: 400000 (ratio 0.4 <= 0.45 -> level 2)
+		// d3: 700000 (ratio 0.7 <= 0.75 -> level 3)
+		// d4: 1000000 (ratio 1.0 > 0.75 -> level 4)
+		txnRows := sqlmock.NewRows([]string{"id", "user_id", "envelope_id", "amount_e5", "country_iso2", "payment_method", "txn_type", "created_at", "description", "wishlist_item_id"}).
+			AddRow(uuid.New(), userUUID, &emptyEnvID, int64(100000), "IN", "custom_crypto", "debit", d1, "", nil).
+			AddRow(uuid.New(), userUUID, &emptyEnvID, int64(400000), "IN", "upi", "debit", d2, "", nil).
+			AddRow(uuid.New(), userUUID, &emptyEnvID, int64(700000), "IN", "bank_account", "debit", d3, "", nil).
+			AddRow(uuid.New(), userUUID, &emptyEnvID, int64(1000000), "IN", "bank_card", "debit", d4, "", nil)
+
+		mock.ExpectQuery("SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE\\(description, ''\\), wishlist_item_id FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(txnRows)
+
+		prevRows := sqlmock.NewRows([]string{"sum"}).AddRow(int64(0))
+		mock.ExpectQuery("SELECT COALESCE\\(SUM\\(amount_e5\\), 0\\) FROM transactionrows").
+			WithArgs(userUUID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(prevRows)
+
+		report, err := repo.GetMonthlyInsights(userUUID, 2026, 9)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if report.TotalExpenseE5 != 2200000 {
+			t.Errorf("expected 2200000, got %d", report.TotalExpenseE5)
+		}
+		if report.DailyHeatmap[0].IntensityLevel != 1 {
+			t.Errorf("expected level 1, got %d", report.DailyHeatmap[0].IntensityLevel)
+		}
+		if report.DailyHeatmap[1].IntensityLevel != 2 {
+			t.Errorf("expected level 2, got %d", report.DailyHeatmap[1].IntensityLevel)
+		}
+		if report.DailyHeatmap[2].IntensityLevel != 3 {
+			t.Errorf("expected level 3, got %d", report.DailyHeatmap[2].IntensityLevel)
+		}
+		if report.DailyHeatmap[3].IntensityLevel != 4 {
+			t.Errorf("expected level 4, got %d", report.DailyHeatmap[3].IntensityLevel)
+		}
+		if report.CategorySplits[0].EnvelopeName != "Custom Category" {
+			t.Errorf("expected Custom Category, got %s", report.CategorySplits[0].EnvelopeName)
+		}
+	})
+}
+
+

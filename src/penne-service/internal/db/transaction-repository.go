@@ -4,6 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"math"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -462,3 +466,453 @@ func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.D
 
 	return dashboardSummary, nil
 }
+
+func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int, month int) (*core.MonthlyInsightsReport, error) {
+	if userUUID == uuid.Nil {
+		return nil, errors.New("user UUID is required")
+	}
+	if year < 2000 || year > 2100 {
+		return nil, errors.New("invalid year")
+	}
+	if month < 1 || month > 12 {
+		return nil, errors.New("invalid month")
+	}
+
+	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
+	daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+
+	now := utils.NowUTC()
+	isCurrentMonth := now.Year() == year && int(now.Month()) == month
+	daysElapsed := daysInMonth
+	if isCurrentMonth {
+		if now.Day() < daysInMonth {
+			daysElapsed = now.Day()
+		}
+	}
+
+	// 1. Fetch envelopes and groups for user
+	type envInfo struct {
+		name  string
+		group string
+	}
+	envelopeMap := make(map[string]envInfo)
+	envQuery := `
+		SELECT e.id, COALESCE(e.name, ''), COALESCE(eg.name, '')
+		FROM envelope e
+		LEFT JOIN envelope_group eg ON e.envelope_group_id = eg.id
+		WHERE e.user_uuid = $1
+	`
+	envRows, err := r.db.QueryContext(context.Background(), envQuery, userUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer envRows.Close()
+	for envRows.Next() {
+		var envID uuid.UUID
+		var envName, groupName string
+		if err := envRows.Scan(&envID, &envName, &groupName); err == nil {
+			envelopeMap[envID.String()] = envInfo{name: envName, group: groupName}
+		}
+	}
+
+	// 2. Fetch subscriptions for user
+	subTxnIDs := make(map[uuid.UUID]bool)
+	var subNames []string
+	subQuery := `
+		SELECT last_transaction_id, name, COALESCE(merchant_pattern, '')
+		FROM subscriptions
+		WHERE user_uuid = $1
+	`
+	subRows, err := r.db.QueryContext(context.Background(), subQuery, userUUID)
+	if err == nil {
+		defer subRows.Close()
+		for subRows.Next() {
+			var lastTxnID *uuid.UUID
+			var subName, pattern string
+			if err := subRows.Scan(&lastTxnID, &subName, &pattern); err == nil {
+				if lastTxnID != nil && *lastTxnID != uuid.Nil {
+					subTxnIDs[*lastTxnID] = true
+				}
+				if trimmed := strings.TrimSpace(strings.ToLower(subName)); trimmed != "" {
+					subNames = append(subNames, trimmed)
+				}
+				if trimmed := strings.TrimSpace(strings.ToLower(pattern)); trimmed != "" {
+					subNames = append(subNames, trimmed)
+				}
+			}
+		}
+	}
+
+	isSubTxn := func(t *core.Transaction) bool {
+		if t.ID != uuid.Nil && subTxnIDs[t.ID] {
+			return true
+		}
+		desc := strings.ToLower(t.Description)
+		if strings.HasPrefix(desc, "subscription:") {
+			return true
+		}
+		for _, name := range subNames {
+			if name != "" && strings.Contains(desc, name) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 3. Fetch transactions for current month
+	txnQuery := `
+		SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
+		FROM transactionrows
+		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		ORDER BY created_at ASC, id ASC
+	`
+	txnRows, err := r.db.QueryContext(context.Background(), txnQuery, userUUID, startOfMonth, endOfMonth)
+	if err != nil {
+		return nil, err
+	}
+	defer txnRows.Close()
+
+	var transactions []*core.Transaction
+	for txnRows.Next() {
+		txn := &core.Transaction{}
+		if err := txnRows.Scan(
+			&txn.ID,
+			&txn.UserID,
+			&txn.EnvelopeID,
+			&txn.AmountE5,
+			&txn.CountryISO,
+			&txn.PaymentMethod,
+			&txn.Type,
+			&txn.CreatedAt,
+			&txn.Description,
+			&txn.WishlistItemID,
+		); err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, txn)
+	}
+
+	// 4. Fetch previous month debit sum
+	prevStart := startOfMonth.AddDate(0, -1, 0)
+	prevEnd := startOfMonth
+	var prevExpenseE5 int64
+	prevQuery := `
+		SELECT COALESCE(SUM(amount_e5), 0)
+		FROM transactionrows
+		WHERE user_id = $1 AND txn_type = 'debit' AND created_at >= $2 AND created_at < $3
+	`
+	_ = r.db.QueryRowContext(context.Background(), prevQuery, userUUID, prevStart, prevEnd).Scan(&prevExpenseE5)
+
+	// 5. Aggregate metrics
+	var totalIncomeE5, totalExpenseE5, subscriptionExpenseE5, discretionaryExpenseE5 int64
+	var subscriptionCount int
+
+	type dailyBucket struct {
+		dateKey string
+		dayName string
+		totalE5 int64
+		txns    []*core.Transaction
+	}
+	dailyDiscretionaryMap := make(map[string]*dailyBucket)
+
+	type categoryBucket struct {
+		spentE5 int64
+		count   int
+	}
+	categorySpendMap := make(map[string]*categoryBucket)
+
+	type paymentBucket struct {
+		spentE5 int64
+		count   int
+	}
+	paymentMethodMap := make(map[string]*paymentBucket)
+
+	var largestTxn *core.Transaction
+
+	for _, t := range transactions {
+		if t.Type == "credit" {
+			totalIncomeE5 += t.AmountE5
+		} else if t.Type == "debit" {
+			totalExpenseE5 += t.AmountE5
+
+			if isSubTxn(t) {
+				subscriptionExpenseE5 += t.AmountE5
+				subscriptionCount++
+			} else {
+				discretionaryExpenseE5 += t.AmountE5
+				if largestTxn == nil || t.AmountE5 > largestTxn.AmountE5 {
+					largestTxn = t
+				}
+
+				dateKey := t.CreatedAt.UTC().Format("2006-01-02")
+				bucket, ok := dailyDiscretionaryMap[dateKey]
+				if !ok {
+					bucket = &dailyBucket{
+						dateKey: dateKey,
+						dayName: t.CreatedAt.UTC().Weekday().String(),
+					}
+					dailyDiscretionaryMap[dateKey] = bucket
+				}
+				bucket.totalE5 += t.AmountE5
+				bucket.txns = append(bucket.txns, t)
+			}
+
+			// Category aggregation
+			envIDStr := "unassigned"
+			if t.EnvelopeID != nil && *t.EnvelopeID != uuid.Nil {
+				envIDStr = t.EnvelopeID.String()
+			}
+			cBucket, ok := categorySpendMap[envIDStr]
+			if !ok {
+				cBucket = &categoryBucket{}
+				categorySpendMap[envIDStr] = cBucket
+			}
+			cBucket.spentE5 += t.AmountE5
+			cBucket.count++
+
+			// Payment method aggregation
+			pm := strings.ToLower(t.PaymentMethod)
+			if pm == "" {
+				pm = "bank_card"
+			}
+			pBucket, ok := paymentMethodMap[pm]
+			if !ok {
+				pBucket = &paymentBucket{}
+				paymentMethodMap[pm] = pBucket
+			}
+			pBucket.spentE5 += t.AmountE5
+			pBucket.count++
+		}
+	}
+
+	// Peak spending day
+	var peakDay *core.PeakSpendDayInfo
+	var maxDailySpendE5 int64
+	for _, bucket := range dailyDiscretionaryMap {
+		if bucket.totalE5 > maxDailySpendE5 {
+			maxDailySpendE5 = bucket.totalE5
+			sortedTxns := make([]*core.Transaction, len(bucket.txns))
+			copy(sortedTxns, bucket.txns)
+			sort.Slice(sortedTxns, func(i, j int) bool {
+				return sortedTxns[i].AmountE5 > sortedTxns[j].AmountE5
+			})
+			var topList []core.PeakSpendDayTransaction
+			for i := 0; i < len(sortedTxns) && i < 3; i++ {
+				desc := sortedTxns[i].Description
+				if desc == "" {
+					desc = "Discretionary Purchase"
+				}
+				topList = append(topList, core.PeakSpendDayTransaction{
+					ID:            sortedTxns[i].ID.String(),
+					Description:   desc,
+					AmountE5:      sortedTxns[i].AmountE5,
+					PaymentMethod: sortedTxns[i].PaymentMethod,
+					Date:          sortedTxns[i].CreatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+			peakDay = &core.PeakSpendDayInfo{
+				Date:             bucket.dateKey,
+				DayName:          bucket.dayName,
+				TotalSpentE5:     bucket.totalE5,
+				TransactionCount: len(bucket.txns),
+				TopTransactions:  topList,
+			}
+		}
+	}
+
+	// No spend days count
+	noSpendDaysCount := 0
+	for day := 1; day <= daysElapsed; day++ {
+		dateKey := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+		if bucket, ok := dailyDiscretionaryMap[dateKey]; !ok || bucket.totalE5 == 0 {
+			noSpendDaysCount++
+		}
+	}
+
+	// Net savings and savings rate
+	netSavingsE5 := totalIncomeE5 - totalExpenseE5
+	var savingsRatePct float64
+	if totalIncomeE5 > 0 {
+		savingsRatePct = math.Max(0, math.Round(float64(netSavingsE5)/float64(totalIncomeE5)*1000.0)/10.0)
+	}
+
+	// Daily average
+	var dailyAverageE5 int64
+	if daysElapsed > 0 {
+		dailyAverageE5 = discretionaryExpenseE5 / int64(daysElapsed)
+	}
+
+	// Category splits
+	var categorySplits []core.CategorySpendSplit
+	for envIDStr, bucket := range categorySpendMap {
+		envName := "Unassigned Surplus"
+		groupName := "General"
+		if envIDStr != "unassigned" {
+			if info, ok := envelopeMap[envIDStr]; ok {
+				if info.name != "" {
+					envName = info.name
+				} else {
+					envName = "Custom Category"
+				}
+				if info.group != "" {
+					groupName = info.group
+				}
+			}
+		}
+		var pct float64
+		if totalExpenseE5 > 0 {
+			pct = math.Round(float64(bucket.spentE5)/float64(totalExpenseE5)*1000.0) / 10.0
+		}
+		categorySplits = append(categorySplits, core.CategorySpendSplit{
+			EnvelopeID:       envIDStr,
+			EnvelopeName:     envName,
+			GroupName:        groupName,
+			SpentE5:          bucket.spentE5,
+			Percentage:       pct,
+			TransactionCount: bucket.count,
+		})
+	}
+	sort.Slice(categorySplits, func(i, j int) bool {
+		return categorySplits[i].SpentE5 > categorySplits[j].SpentE5
+	})
+
+	// Payment method splits
+	paymentMethodLabels := map[string]string{
+		"bank_card":    "Debit / Credit Card",
+		"upi":          "UPI AutoPay / QR",
+		"bank_account": "Bank Auto-Debit / Netbanking",
+		"back_account": "Bank Auto-Debit",
+	}
+	var pmSplits []core.PaymentMethodSplit
+	for method, bucket := range paymentMethodMap {
+		label, ok := paymentMethodLabels[method]
+		if !ok {
+			label = strings.ToUpper(method)
+		}
+		pmSplits = append(pmSplits, core.PaymentMethodSplit{
+			Method:  method,
+			Label:   label,
+			SpentE5: bucket.spentE5,
+			Count:   bucket.count,
+		})
+	}
+	sort.Slice(pmSplits, func(i, j int) bool {
+		return pmSplits[i].SpentE5 > pmSplits[j].SpentE5
+	})
+
+	// Previous month delta
+	var prevMonthDelta *core.PreviousMonthInsightsDelta
+	if prevExpenseE5 > 0 {
+		deltaPct := math.Round(float64(totalExpenseE5-prevExpenseE5)/float64(prevExpenseE5)*1000.0) / 10.0
+		prevMonthDelta = &core.PreviousMonthInsightsDelta{
+			TotalExpenseE5: prevExpenseE5,
+			DeltaPct:       deltaPct,
+			IsLower:        totalExpenseE5 <= prevExpenseE5,
+		}
+	}
+
+	// Heatmap items
+	firstDayOffset := int(startOfMonth.Weekday())
+	dailyHeatmap := make([]core.DailySpendingHeatmapItem, 0, daysInMonth)
+	for day := 1; day <= daysInMonth; day++ {
+		d := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+		dateKey := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+		dayOfWeek := int(d.Weekday())
+		dayName := d.Weekday().String()
+		isFuture := isCurrentMonth && day > now.Day()
+
+		var daySpentE5 int64
+		var txnCount int
+		var dayTxns []core.PeakSpendDayTransaction
+
+		if bucket, ok := dailyDiscretionaryMap[dateKey]; ok {
+			daySpentE5 = bucket.totalE5
+			txnCount = len(bucket.txns)
+			for _, t := range bucket.txns {
+				desc := t.Description
+				if desc == "" {
+					desc = "Discretionary Purchase"
+				}
+				dayTxns = append(dayTxns, core.PeakSpendDayTransaction{
+					ID:            t.ID.String(),
+					Description:   desc,
+					AmountE5:      t.AmountE5,
+					PaymentMethod: t.PaymentMethod,
+					Date:          t.CreatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+
+		intensity := 0
+		if !isFuture && daySpentE5 > 0 {
+			if maxDailySpendE5 > 0 {
+				ratio := float64(daySpentE5) / float64(maxDailySpendE5)
+				if ratio <= 0.2 {
+					intensity = 1
+				} else if ratio <= 0.45 {
+					intensity = 2
+				} else if ratio <= 0.75 {
+					intensity = 3
+				} else {
+					intensity = 4
+				}
+			} else {
+				intensity = 1
+			}
+		}
+
+		dailyHeatmap = append(dailyHeatmap, core.DailySpendingHeatmapItem{
+			Date:             dateKey,
+			Day:              day,
+			DayOfWeek:        dayOfWeek,
+			DayName:          dayName,
+			TotalSpentE5:     daySpentE5,
+			TransactionCount: txnCount,
+			IntensityLevel:   intensity,
+			IsFuture:         isFuture,
+			Transactions:     dayTxns,
+		})
+	}
+
+	var largestTxnInfo *core.PeakSpendDayTransaction
+	if largestTxn != nil {
+		desc := largestTxn.Description
+		if desc == "" {
+			desc = "Single Expense"
+		}
+		largestTxnInfo = &core.PeakSpendDayTransaction{
+			ID:            largestTxn.ID.String(),
+			Description:   desc,
+			AmountE5:      largestTxn.AmountE5,
+			PaymentMethod: largestTxn.PaymentMethod,
+			Date:          largestTxn.CreatedAt.UTC().Format(time.RFC3339),
+		}
+	}
+
+	return &core.MonthlyInsightsReport{
+		Year:                   year,
+		Month:                  month,
+		MonthLabel:             fmt.Sprintf("%s %d", startOfMonth.Month().String(), year),
+		DaysInMonth:            daysInMonth,
+		DaysElapsed:            daysElapsed,
+		TotalIncomeE5:          totalIncomeE5,
+		TotalExpenseE5:         totalExpenseE5,
+		NetSavingsE5:           netSavingsE5,
+		SavingsRatePct:         savingsRatePct,
+		SubscriptionExpenseE5:  subscriptionExpenseE5,
+		DiscretionaryExpenseE5: discretionaryExpenseE5,
+		SubscriptionCount:      subscriptionCount,
+		PeakDay:                peakDay,
+		DailyHeatmap:           dailyHeatmap,
+		FirstDayOffset:         firstDayOffset,
+		MaxDailySpendE5:        maxDailySpendE5,
+		CategorySplits:         categorySplits,
+		NoSpendDaysCount:       noSpendDaysCount,
+		DailyAverageE5:         dailyAverageE5,
+		LargestTransaction:     largestTxnInfo,
+		PaymentMethodSplits:    pmSplits,
+		PreviousMonth:          prevMonthDelta,
+	}, nil
+}
+

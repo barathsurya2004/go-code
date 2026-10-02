@@ -45,6 +45,7 @@ type TransactionRepository interface {
 	DeleteTransaction(uuid uuid.UUID) error
 	GetDashboardSummary(uuid uuid.UUID) (*DashboardSummary, error)
 	GetTransactionByUserUUIDPaginated(userUUID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*Transaction, error)
+	GetMonthlyInsights(userUUID uuid.UUID, year int, month int) (*MonthlyInsightsReport, error)
 }
 
 type User struct {
@@ -189,6 +190,81 @@ type DashboardSummary struct {
 	CardLimitE5         int64 `json:"card_limit_e5"`
 	BankSpentE5         int64 `json:"bank_spent_e5"`
 	BankLimitE5         int64 `json:"bank_limit_e5"`
+}
+
+type CategorySpendSplit struct {
+	EnvelopeID       string  `json:"envelope_id"`
+	EnvelopeName     string  `json:"envelope_name"`
+	GroupName        string  `json:"group_name"`
+	SpentE5          int64   `json:"spent_e5"`
+	Percentage       float64 `json:"percentage"`
+	TransactionCount int     `json:"transaction_count"`
+}
+
+type PeakSpendDayTransaction struct {
+	ID            string `json:"id"`
+	Description   string `json:"description"`
+	AmountE5      int64  `json:"amount_e5"`
+	PaymentMethod string `json:"payment_method,omitempty"`
+	Date          string `json:"date,omitempty"`
+}
+
+type PeakSpendDayInfo struct {
+	Date             string                    `json:"date"`
+	DayName          string                    `json:"day_name"`
+	TotalSpentE5     int64                     `json:"total_spent_e5"`
+	TransactionCount int                       `json:"transaction_count"`
+	TopTransactions  []PeakSpendDayTransaction `json:"top_transactions"`
+}
+
+type DailySpendingHeatmapItem struct {
+	Date             string                    `json:"date"`
+	Day              int                       `json:"day"`
+	DayOfWeek        int                       `json:"day_of_week"`
+	DayName          string                    `json:"day_name"`
+	TotalSpentE5     int64                     `json:"total_spent_e5"`
+	TransactionCount int                       `json:"transaction_count"`
+	IntensityLevel   int                       `json:"intensity_level"`
+	IsFuture         bool                      `json:"is_future"`
+	Transactions     []PeakSpendDayTransaction `json:"transactions,omitempty"`
+}
+
+type PaymentMethodSplit struct {
+	Method  string `json:"method"`
+	Label   string `json:"label"`
+	SpentE5 int64  `json:"spent_e5"`
+	Count   int    `json:"count"`
+}
+
+type PreviousMonthInsightsDelta struct {
+	TotalExpenseE5 int64   `json:"total_expense_e5"`
+	DeltaPct       float64 `json:"delta_pct"`
+	IsLower        bool    `json:"is_lower"`
+}
+
+type MonthlyInsightsReport struct {
+	Year                   int                         `json:"year"`
+	Month                  int                         `json:"month"`
+	MonthLabel             string                      `json:"month_label"`
+	DaysInMonth            int                         `json:"days_in_month"`
+	DaysElapsed            int                         `json:"days_elapsed"`
+	TotalIncomeE5          int64                       `json:"total_income_e5"`
+	TotalExpenseE5         int64                       `json:"total_expense_e5"`
+	NetSavingsE5           int64                       `json:"net_savings_e5"`
+	SavingsRatePct         float64                     `json:"savings_rate_pct"`
+	SubscriptionExpenseE5  int64                       `json:"subscription_expense_e5"`
+	DiscretionaryExpenseE5 int64                       `json:"discretionary_expense_e5"`
+	SubscriptionCount      int                         `json:"subscription_count"`
+	PeakDay                *PeakSpendDayInfo           `json:"peak_day,omitempty"`
+	DailyHeatmap           []DailySpendingHeatmapItem  `json:"daily_heatmap"`
+	FirstDayOffset         int                         `json:"first_day_offset"`
+	MaxDailySpendE5        int64                       `json:"max_daily_spend_e5"`
+	CategorySplits         []CategorySpendSplit        `json:"category_splits"`
+	NoSpendDaysCount       int                         `json:"no_spend_days_count"`
+	DailyAverageE5         int64                       `json:"daily_average_e5"`
+	LargestTransaction     *PeakSpendDayTransaction    `json:"largest_transaction,omitempty"`
+	PaymentMethodSplits    []PaymentMethodSplit        `json:"payment_method_splits"`
+	PreviousMonth          *PreviousMonthInsightsDelta `json:"previous_month,omitempty"`
 }
 
 type CreateUserWorkflowResult struct {

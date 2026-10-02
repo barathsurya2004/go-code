@@ -712,3 +712,49 @@ func (h *TransactionServiceHandler) ProcessEmailTransaction(w http.ResponseWrite
 	json.NewEncoder(w).Encode(res)
 }
 
+func (h *TransactionServiceHandler) MonthlyInsightsHandler(w http.ResponseWriter, r *http.Request) {
+	userUUID, ok := getUserUUIDFromContextOrQuery(r)
+	if !ok {
+		http.Error(w, "Missing user UUID in context", http.StatusBadRequest)
+		h.logger.Error("No user UUID found in request context")
+		return
+	}
+
+	now := utils.NowUTC()
+	year := now.Year()
+	month := int(now.Month())
+
+	query := r.URL.Query()
+	if yearStr := query.Get("year"); yearStr != "" {
+		if y, err := strconv.Atoi(yearStr); err == nil && y >= 2000 && y <= 2100 {
+			year = y
+		} else {
+			http.Error(w, "Invalid year parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if monthStr := query.Get("month"); monthStr != "" {
+		if m, err := strconv.Atoi(monthStr); err == nil && m >= 1 && m <= 12 {
+			month = m
+		} else {
+			http.Error(w, "Invalid month parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	report, err := h.transactionRepo.GetMonthlyInsights(userUUID, year, month)
+	if err != nil {
+		h.logger.Error("Failed to fetch monthly insights", zap.Error(err), zap.String("userUUID", userUUID.String()))
+		http.Error(w, "Failed to fetch monthly insights", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(report); err != nil {
+		h.logger.Error("Failed to encode monthly insights response", zap.Error(err))
+	}
+}
+
+

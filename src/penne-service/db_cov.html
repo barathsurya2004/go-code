@@ -1,0 +1,3054 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>db: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/barathsurya2004/go-code/penne-service/internal/db/allocation-repository.go (93.4%)</option>
+				
+				<option value="file1">github.com/barathsurya2004/go-code/penne-service/internal/db/db.go (84.6%)</option>
+				
+				<option value="file2">github.com/barathsurya2004/go-code/penne-service/internal/db/envelope-group-repository.go (100.0%)</option>
+				
+				<option value="file3">github.com/barathsurya2004/go-code/penne-service/internal/db/envelope-repository.go (94.2%)</option>
+				
+				<option value="file4">github.com/barathsurya2004/go-code/penne-service/internal/db/module.go (100.0%)</option>
+				
+				<option value="file5">github.com/barathsurya2004/go-code/penne-service/internal/db/shortcut-intent-repository.go (98.6%)</option>
+				
+				<option value="file6">github.com/barathsurya2004/go-code/penne-service/internal/db/subscription-repository.go (97.0%)</option>
+				
+				<option value="file7">github.com/barathsurya2004/go-code/penne-service/internal/db/token-repository.go (100.0%)</option>
+				
+				<option value="file8">github.com/barathsurya2004/go-code/penne-service/internal/db/transaction-repository.go (93.6%)</option>
+				
+				<option value="file9">github.com/barathsurya2004/go-code/penne-service/internal/db/user-repository.go (100.0%)</option>
+				
+				<option value="file10">github.com/barathsurya2004/go-code/penne-service/internal/db/wishlist-repository.go (96.4%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package db
+
+import (
+        "database/sql"
+        "errors"
+        "time"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+)
+
+type pgAllocationRepo struct {
+        db *sql.DB
+}
+
+func NewPgAllocationRepo(db *sql.DB) core.AllocationRepository <span class="cov8" title="1">{
+        return &amp;pgAllocationRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgAllocationRepo) CreateAllocation(allocation *core.Allocation, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        if allocation == nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("allocation cannot be nil")
+        }</span>
+        <span class="cov8" title="1">if allocation.EnvelopeID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("envelope_id is required")
+        }</span>
+        <span class="cov8" title="1">now := utils.NowUTC()
+        if allocation.CreatedAt.IsZero() </span><span class="cov0" title="0">{
+                allocation.CreatedAt = now
+        }</span>
+        <span class="cov8" title="1">if allocation.UpdatedAt.IsZero() </span><span class="cov0" title="0">{
+                allocation.UpdatedAt = now
+        }</span>
+        <span class="cov8" title="1">checkQuery := `
+                SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
+                FROM allocation
+                WHERE envelope_id = $1
+                  AND ($2::date IS NULL OR $3::date IS NULL OR (start_date &lt;= $3 AND end_date &gt;= $2))
+                LIMIT 1
+        `
+        var checkRow *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                checkRow = Tx.QueryRow(checkQuery, allocation.EnvelopeID, allocation.StartDate, allocation.EndDate)
+        }</span> else<span class="cov8" title="1"> {
+                checkRow = r.db.QueryRow(checkQuery, allocation.EnvelopeID, allocation.StartDate, allocation.EndDate)
+        }</span>
+
+        <span class="cov8" title="1">var existingAllocation core.Allocation
+        err := checkRow.Scan(
+                &amp;existingAllocation.ID,
+                &amp;existingAllocation.EnvelopeID,
+                &amp;existingAllocation.AllocatedAmountE5,
+                &amp;existingAllocation.SpentAmountE5,
+                &amp;existingAllocation.CreatedAt,
+                &amp;existingAllocation.UpdatedAt,
+                &amp;existingAllocation.StartDate,
+                &amp;existingAllocation.EndDate,
+        )
+
+        if err == nil </span><span class="cov8" title="1">{
+                *allocation = existingAllocation
+                return allocation.ID, nil
+        }</span> else<span class="cov8" title="1"> if err != sql.ErrNoRows </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                INSERT INTO allocation (envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date)
+                VALUES ($1, $2, $3, COALESCE($4, NOW()), COALESCE($5, NOW()), $6, $7) RETURNING id
+        `
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(query, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;allocation.ID); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return allocation.ID, nil</span>
+}
+
+func (r *pgAllocationRepo) GetAllocationByID(id uuid.UUID) (*core.Allocation, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
+                FROM allocation
+                WHERE id = $1
+        `
+        allocation := &amp;core.Allocation{}
+        err := r.db.QueryRow(query, id).Scan(&amp;allocation.ID, &amp;allocation.EnvelopeID, &amp;allocation.AllocatedAmountE5, &amp;allocation.SpentAmountE5, &amp;allocation.CreatedAt, &amp;allocation.UpdatedAt, &amp;allocation.StartDate, &amp;allocation.EndDate)
+        return allocation, err
+}</span>
+
+func (r *pgAllocationRepo) GetAllocationsByEnvelopeID(envelopeID uuid.UUID) ([]*core.Allocation, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, envelope_id, allocated_amount_e5, spent_amount_e5, created_at, updated_at, start_date, end_date
+                FROM allocation
+                WHERE envelope_id = $1
+        `
+        rows, err := r.db.Query(query, envelopeID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+        allocations := []*core.Allocation{}
+        for rows.Next() </span><span class="cov8" title="1">{
+                allocation := &amp;core.Allocation{}
+                err := rows.Scan(&amp;allocation.ID, &amp;allocation.EnvelopeID, &amp;allocation.AllocatedAmountE5, &amp;allocation.SpentAmountE5, &amp;allocation.CreatedAt, &amp;allocation.UpdatedAt, &amp;allocation.StartDate, &amp;allocation.EndDate)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">allocations = append(allocations, allocation)</span>
+        }
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return allocations, nil</span>
+}
+
+func (r *pgAllocationRepo) GetActiveAllocationsByUserUUID(userUUID uuid.UUID, targetDate time.Time, Tx *sql.Tx) ([]*core.Allocation, error) <span class="cov8" title="1">{
+        queryForEnv := `
+                SELECT id, envelope_group_id, user_uuid, name, target_amount_e5, cadence, country_iso, is_system
+                FROM envelope WHERE user_uuid = $1
+        `
+
+        var rowsForEnv *sql.Rows
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                rowsForEnv, err = Tx.Query(queryForEnv, userUUID)
+        }</span> else<span class="cov8" title="1"> {
+                rowsForEnv, err = r.db.Query(queryForEnv, userUUID)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rowsForEnv.Close()
+        envelopeMap := make(map[uuid.UUID]core.Envelope)
+        for rowsForEnv.Next() </span><span class="cov8" title="1">{
+                envelope := &amp;core.Envelope{}
+                err := rowsForEnv.Scan(&amp;envelope.ID, &amp;envelope.EnvelopeGroupID, &amp;envelope.UserUUID, &amp;envelope.Name, &amp;envelope.TargetAmountE5, &amp;envelope.Cadence, &amp;envelope.CountryISO, &amp;envelope.IsSystem)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">envelopeMap[envelope.ID] = *envelope</span>
+        }
+        <span class="cov8" title="1">if err := rowsForEnv.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT a.id, a.envelope_id, a.allocated_amount_e5, a.spent_amount_e5, a.created_at, a.updated_at, a.start_date, a.end_date
+                FROM allocation a
+                JOIN envelope e ON a.envelope_id = e.id
+                WHERE e.user_uuid = $1
+                  AND $2::date BETWEEN a.start_date AND a.end_date
+        `
+        var rows *sql.Rows
+        if Tx != nil </span><span class="cov8" title="1">{
+                rows, err = Tx.Query(query, userUUID, targetDate)
+        }</span> else<span class="cov8" title="1"> {
+                rows, err = r.db.Query(query, userUUID, targetDate)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+        allocations := []*core.Allocation{}
+        for rows.Next() </span><span class="cov8" title="1">{
+                allocation := &amp;core.Allocation{}
+                err := rows.Scan(&amp;allocation.ID, &amp;allocation.EnvelopeID, &amp;allocation.AllocatedAmountE5, &amp;allocation.SpentAmountE5, &amp;allocation.CreatedAt, &amp;allocation.UpdatedAt, &amp;allocation.StartDate, &amp;allocation.EndDate)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">allocations = append(allocations, allocation)
+                delete(envelopeMap, allocation.EnvelopeID)</span>
+        }
+
+        <span class="cov8" title="1">for _, envelope := range envelopeMap </span><span class="cov8" title="1">{
+                startDate, endDate, err := utils.GetCadenceStartAndEndTime(envelope.Cadence, targetDate)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+
+                <span class="cov8" title="1">allocation := &amp;core.Allocation{
+                        EnvelopeID:        envelope.ID,
+                        AllocatedAmountE5: envelope.TargetAmountE5,
+                        SpentAmountE5:     0,
+                        CreatedAt:         utils.NowUTC(),
+                        UpdatedAt:         utils.NowUTC(),
+                        StartDate:         &amp;startDate,
+                        EndDate:           &amp;endDate,
+                }
+
+                allocation.ID, err = r.CreateAllocation(allocation, Tx)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">allocations = append(allocations, allocation)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return allocations, nil</span>
+}
+
+func (r *pgAllocationRepo) UpdateAllocation(allocation *core.Allocation) error <span class="cov8" title="1">{
+        if allocation == nil </span><span class="cov8" title="1">{
+                return errors.New("allocation cannot be nil")
+        }</span>
+        <span class="cov8" title="1">if allocation.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("id is required")
+        }</span>
+        <span class="cov8" title="1">if allocation.UpdatedAt.IsZero() </span><span class="cov0" title="0">{
+                allocation.UpdatedAt = utils.NowUTC()
+        }</span>
+        <span class="cov8" title="1">query := `
+                UPDATE allocation
+                SET envelope_id = $2, allocated_amount_e5 = $3, spent_amount_e5 = $4, created_at = $5, updated_at = $6, start_date = $7, end_date = $8
+                WHERE id = $1
+        `
+        _, err := r.db.Exec(query, allocation.ID, allocation.EnvelopeID, allocation.AllocatedAmountE5, allocation.SpentAmountE5, allocation.CreatedAt, allocation.UpdatedAt, allocation.StartDate, allocation.EndDate)
+        return err</span>
+}
+
+func (r *pgAllocationRepo) DeleteAllocation(id uuid.UUID) error <span class="cov8" title="1">{
+        query := `
+                DELETE FROM allocation
+                WHERE id = $1
+        `
+        _, err := r.db.Exec(query, id)
+        return err
+}</span>
+
+func (r *pgAllocationRepo) UpdateSpentAmount(envelopeID uuid.UUID, targetDate time.Time, amountDeltaE5 int64, Tx *sql.Tx) error <span class="cov8" title="1">{
+        if targetDate.IsZero() </span><span class="cov8" title="1">{
+                targetDate = utils.NowUTC()
+        }</span>
+
+        <span class="cov8" title="1">updateQuery := `
+                UPDATE allocation
+                SET spent_amount_e5 = GREATEST(0, spent_amount_e5 + $1),
+                    updated_at = NOW()
+                WHERE envelope_id = $2
+                  AND $3::date BETWEEN start_date AND end_date
+                RETURNING id
+        `
+        var updatedID uuid.UUID
+        var err error
+        if Tx != nil </span><span class="cov0" title="0">{
+                err = Tx.QueryRow(updateQuery, amountDeltaE5, envelopeID, targetDate).Scan(&amp;updatedID)
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRow(updateQuery, amountDeltaE5, envelopeID, targetDate).Scan(&amp;updatedID)
+        }</span>
+        <span class="cov8" title="1">if err == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if err != sql.ErrNoRows </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        // No active allocation found, query envelope to get cadence and target amount
+        <span class="cov8" title="1">envQuery := `SELECT cadence, target_amount_e5 FROM envelope WHERE id = $1`
+        var cadence core.Cadence
+        var targetAmountE5 float64
+        if Tx != nil </span><span class="cov0" title="0">{
+                err = Tx.QueryRow(envQuery, envelopeID).Scan(&amp;cadence, &amp;targetAmountE5)
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRow(envQuery, envelopeID).Scan(&amp;cadence, &amp;targetAmountE5)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">startDate, endDate, err := utils.GetCadenceStartAndEndTime(cadence, targetDate)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">var initialSpent int64
+        if amountDeltaE5 &gt; 0 </span><span class="cov8" title="1">{
+                initialSpent = amountDeltaE5
+        }</span>
+
+        <span class="cov8" title="1">newAlloc := &amp;core.Allocation{
+                EnvelopeID:        envelopeID,
+                AllocatedAmountE5: targetAmountE5,
+                SpentAmountE5:     initialSpent,
+                StartDate:         &amp;startDate,
+                EndDate:           &amp;endDate,
+                CreatedAt:         utils.NowUTC(),
+                UpdatedAt:         utils.NowUTC(),
+        }
+
+        _, err = r.CreateAllocation(newAlloc, Tx)
+        return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package db
+
+import (
+        "context"
+        "database/sql"
+        "os"
+
+        "github.com/joho/godotenv"
+        _ "github.com/lib/pq"
+        "go.uber.org/fx"
+)
+
+type Config struct {
+        DSN string
+}
+type DBTX interface {
+        Exec(query string, args ...any) (sql.Result, error)
+        QueryRow(query string, args ...any) *sql.Row
+        Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func CreateConfig() Config <span class="cov8" title="1">{
+        _ = godotenv.Load()
+        _ = godotenv.Load("src/penne-service/.env")
+        dsn := os.Getenv("DATABASE_URL")
+        if dsn == "" </span><span class="cov0" title="0">{
+                dsn = "postgres://postgres:postgres@localhost:5432/penne_app?sslmode=disable"
+        }</span>
+        <span class="cov8" title="1">return Config{
+                DSN: dsn,
+        }</span>
+}
+
+func NewDb(lc fx.Lifecycle, cfg Config) (*sql.DB, error) <span class="cov8" title="1">{
+        db, err := sql.Open("postgres", cfg.DSN)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">lc.Append(fx.Hook{
+                OnStart: func(ctx context.Context) error </span><span class="cov8" title="1">{
+                        return db.PingContext(ctx)
+                }</span>,
+                OnStop: func(ctx context.Context) error <span class="cov8" title="1">{
+                        return db.Close()
+                }</span>,
+        })
+
+        <span class="cov8" title="1">return db, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package db
+
+import (
+        "database/sql"
+        "errors"
+        "strings"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/google/uuid"
+)
+
+type EnvelopeGroupRepository struct {
+        db *sql.DB
+}
+
+func NewEnvelopeGroupRepository(db *sql.DB) core.EnvelopeGroupRepository <span class="cov8" title="1">{
+        return &amp;EnvelopeGroupRepository{db: db}
+}</span>
+
+func (r *EnvelopeGroupRepository) CreateEnvelopeGroup(envelopeGroup *core.EnvelopeGroup, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        query := `
+                INSERT INTO envelope_group (user_uuid, name, is_system)
+                VALUES ($1, $2, $3) RETURNING id
+        `
+
+        if strings.TrimSpace(envelopeGroup.Name) == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("envelope group name is required")
+        }</span>
+
+        <span class="cov8" title="1">var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(query, envelopeGroup.UserUUID, envelopeGroup.Name, envelopeGroup.IsSystem)
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;envelopeGroup.ID); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+
+        <span class="cov8" title="1">return envelopeGroup.ID, nil</span>
+}
+
+func (r *EnvelopeGroupRepository) GetEnvelopeGroupByID(id uuid.UUID) (*core.EnvelopeGroup, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_uuid, name, is_system, created_at, updated_at
+                FROM envelope_group
+                WHERE id = $1
+        `
+
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("envelope group ID is invalid")
+        }</span>
+
+        <span class="cov8" title="1">envelopeGroup := &amp;core.EnvelopeGroup{}
+        err := r.db.QueryRow(query, id).Scan(
+                &amp;envelopeGroup.ID,
+                &amp;envelopeGroup.UserUUID,
+                &amp;envelopeGroup.Name,
+                &amp;envelopeGroup.IsSystem,
+                &amp;envelopeGroup.CreatedAt,
+                &amp;envelopeGroup.UpdatedAt,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return envelopeGroup, nil</span>
+}
+
+func (r *EnvelopeGroupRepository) GetEnvelopeGroupsByUserUUID(userUUID uuid.UUID) ([]*core.EnvelopeGroup, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_uuid, name, is_system,created_at, updated_at
+                FROM envelope_group
+                WHERE user_uuid = $1
+        `
+
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is invalid")
+        }</span>
+
+        <span class="cov8" title="1">rows, err := r.db.Query(query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var envelopeGroups []*core.EnvelopeGroup
+        for rows.Next() </span><span class="cov8" title="1">{
+                envelopeGroup := &amp;core.EnvelopeGroup{}
+                if err := rows.Scan(
+                        &amp;envelopeGroup.ID,
+                        &amp;envelopeGroup.UserUUID,
+                        &amp;envelopeGroup.Name,
+                        &amp;envelopeGroup.IsSystem,
+                        &amp;envelopeGroup.CreatedAt,
+                        &amp;envelopeGroup.UpdatedAt,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">envelopeGroups = append(envelopeGroups, envelopeGroup)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return envelopeGroups, nil</span>
+}
+
+func (r *EnvelopeGroupRepository) UpdateEnvelopeGroup(envelopeGroup *core.EnvelopeGroup) error <span class="cov8" title="1">{
+        query := `
+                UPDATE envelope_group
+                SET name = $1, is_system = $2
+                WHERE id = $3
+        `
+
+        if strings.TrimSpace(envelopeGroup.Name) == "" </span><span class="cov8" title="1">{
+                return errors.New("envelope group name is required")
+        }</span>
+
+        <span class="cov8" title="1">if envelopeGroup.ID == uuid.Nil || uuid.Validate(envelopeGroup.ID.String()) != nil </span><span class="cov8" title="1">{
+                return errors.New("envelope group ID is invalid")
+        }</span>
+
+        <span class="cov8" title="1">_, err := r.db.Exec(query, envelopeGroup.Name, envelopeGroup.IsSystem, envelopeGroup.ID)
+        return err</span>
+}
+
+func (r *EnvelopeGroupRepository) DeleteEnvelopeGroup(id uuid.UUID) error <span class="cov8" title="1">{
+        query := `
+                DELETE FROM envelope_group
+                WHERE id = $1
+        `
+
+        if id == uuid.Nil || uuid.Validate(id.String()) != nil </span><span class="cov8" title="1">{
+                return errors.New("envelope group ID is invalid")
+        }</span>
+
+        <span class="cov8" title="1">_, err := r.db.Exec(query, id)
+        return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package db
+
+import (
+        "database/sql"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+)
+
+type pgEnvelopeRepo struct {
+        db *sql.DB
+}
+
+func NewPgEnvelopeRepo(db *sql.DB) core.EnvelopeRepository <span class="cov8" title="1">{
+        return &amp;pgEnvelopeRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgEnvelopeRepo) CreateEnvelope(envelope *core.Envelope, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        now := utils.NowUTC()
+        if envelope.CreatedAt.IsZero() </span><span class="cov0" title="0">{
+                envelope.CreatedAt = now
+        }</span>
+        <span class="cov8" title="1">if envelope.UpdatedAt.IsZero() </span><span class="cov0" title="0">{
+                envelope.UpdatedAt = now
+        }</span>
+        <span class="cov8" title="1">query := `
+                INSERT INTO envelope (
+                        user_uuid,
+                        name,
+                        envelope_group_id,
+                        target_amount_e5,
+                        cadence,
+                        country_iso,
+                        created_at,
+                        updated_at,
+                        is_system
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9) RETURNING id
+        `
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(
+                        query,
+                        envelope.UserUUID,
+                        envelope.Name,
+                        envelope.EnvelopeGroupID,
+                        envelope.TargetAmountE5,
+                        envelope.Cadence,
+                        envelope.CountryISO,
+                        envelope.CreatedAt,
+                        envelope.UpdatedAt,
+                        envelope.IsSystem,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(
+                        query,
+                        envelope.UserUUID,
+                        envelope.Name,
+                        envelope.EnvelopeGroupID,
+                        envelope.TargetAmountE5,
+                        envelope.Cadence,
+                        envelope.CountryISO,
+                        envelope.CreatedAt,
+                        envelope.UpdatedAt,
+                        envelope.IsSystem,
+                )
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;envelope.ID); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return envelope.ID, nil</span>
+}
+
+func (r *pgEnvelopeRepo) GetEnvelopeByID(id uuid.UUID) (*core.Envelope, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system
+                FROM envelope
+                WHERE id = $1
+        `
+        envelope := &amp;core.Envelope{}
+        err := r.db.QueryRow(query, id).Scan(
+                &amp;envelope.ID,
+                &amp;envelope.UserUUID,
+                &amp;envelope.Name,
+                &amp;envelope.EnvelopeGroupID,
+                &amp;envelope.TargetAmountE5,
+                &amp;envelope.Cadence,
+                &amp;envelope.CountryISO,
+                &amp;envelope.CreatedAt,
+                &amp;envelope.UpdatedAt,
+                &amp;envelope.IsSystem,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return envelope, nil</span>
+}
+
+func (r *pgEnvelopeRepo) GetEnvelopesByUserUUID(userUUID uuid.UUID) ([]*core.Envelope, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_uuid,name, envelope_group_id, target_amount_e5, cadence, country_iso, created_at, updated_at, is_system
+                FROM envelope
+                WHERE user_uuid = $1
+        `
+        rows, err := r.db.Query(query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        envelopes := []*core.Envelope{}
+        for rows.Next() </span><span class="cov8" title="1">{
+                envelope := &amp;core.Envelope{}
+                err := rows.Scan(
+                        &amp;envelope.ID,
+                        &amp;envelope.UserUUID,
+                        &amp;envelope.Name,
+                        &amp;envelope.EnvelopeGroupID,
+                        &amp;envelope.TargetAmountE5,
+                        &amp;envelope.Cadence,
+                        &amp;envelope.CountryISO,
+                        &amp;envelope.CreatedAt,
+                        &amp;envelope.UpdatedAt,
+                        &amp;envelope.IsSystem,
+                )
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">envelopes = append(envelopes, envelope)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return envelopes, nil</span>
+}
+
+func (r *pgEnvelopeRepo) GetEnvelopeIdByName(envlopeName string, userUUID uuid.UUID, tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        query := `SELECT id FROM envelope WHERE name = $1 AND user_uuid = $2`
+        var row *sql.Row
+        if tx != nil </span><span class="cov8" title="1">{
+                row = tx.QueryRow(query, envlopeName, userUUID)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(query, envlopeName, userUUID)
+        }</span>
+        <span class="cov8" title="1">var id uuid.UUID
+        if err := row.Scan(&amp;id); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return id, nil</span>
+}
+
+func (r *pgEnvelopeRepo) UpdateEnvelope(envelope *core.Envelope) error <span class="cov8" title="1">{
+        if envelope.UpdatedAt.IsZero() </span><span class="cov0" title="0">{
+                envelope.UpdatedAt = utils.NowUTC()
+        }</span>
+        <span class="cov8" title="1">query := `
+                UPDATE envelope
+                SET 
+                        envelope_group_id = $2,
+                        target_amount_e5 = $3,
+                        cadence = $4,
+                        country_iso = $5,
+                        updated_at = $6,
+                        is_system = $7,
+                        name = $8
+                WHERE id = $1 AND user_uuid = $9
+        `
+        _, err := r.db.Exec(
+                query,
+                envelope.ID,
+                envelope.EnvelopeGroupID,
+                envelope.TargetAmountE5,
+                envelope.Cadence,
+                envelope.CountryISO,
+                envelope.UpdatedAt,
+                envelope.IsSystem,
+                envelope.Name,
+                envelope.UserUUID,
+        )
+        return err</span>
+}
+
+func (r *pgEnvelopeRepo) DeleteEnvelope(id uuid.UUID) error <span class="cov8" title="1">{
+        query := `
+                DELETE FROM envelope
+                WHERE id = $1
+        `
+        _, err := r.db.Exec(query, id)
+        return err
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package db
+
+import (
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "go.uber.org/fx"
+)
+
+var Module = fx.Module(
+        "db",
+        fx.Provide(CreateConfig),
+        fx.Provide(NewDb),
+        fx.Provide(NewPgTransactionRowsRepo),
+        fx.Provide(NewPgUserRepo),
+        fx.Provide(NewTokenRepo),
+        fx.Provide(NewEnvelopeGroupRepository),
+        fx.Provide(NewPgEnvelopeRepo),
+        fx.Provide(NewPgAllocationRepo),
+        fx.Provide(NewPgShortcutIntentRepo),
+        fx.Provide(NewPgWishlistRepo),
+        fx.Provide(NewPgSubscriptionRepo),
+        fx.Provide(NewRepoContainer),
+)
+
+func NewRepoContainer(
+        Transaction core.TransactionRepository,
+        User core.UserRepository,
+        Token core.TokenRepository,
+        EnvelopeGroup core.EnvelopeGroupRepository,
+        Envelope core.EnvelopeRepository,
+        Allocation core.AllocationRepository,
+        ShortcutIntent core.ShortcutIntentRepository,
+        Wishlist core.WishlistRepository,
+        Subscription core.SubscriptionRepository,
+) core.RepoContainer <span class="cov8" title="1">{
+        return core.RepoContainer{
+                Transaction:    Transaction,
+                User:           User,
+                Token:          Token,
+                EnvelopeGroup:  EnvelopeGroup,
+                Envelope:       Envelope,
+                Allocation:     Allocation,
+                ShortcutIntent: ShortcutIntent,
+                Wishlist:       Wishlist,
+                Subscription:   Subscription,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package db
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "time"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+)
+
+type pgShortcutIntentRepo struct {
+        db *sql.DB
+}
+
+func NewPgShortcutIntentRepo(db *sql.DB) core.ShortcutIntentRepository <span class="cov8" title="1">{
+        return &amp;pgShortcutIntentRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgShortcutIntentRepo) CreateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        query := `
+                INSERT INTO shortcut_intent (user_id, envelope_id, latitude, longitude, status, created_at, transaction_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+        `
+
+        // validation checks
+        if shortcutIntent.UserID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if shortcutIntent.Status == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("shortcut intent status cannot be empty")
+        }</span>
+        <span class="cov8" title="1">if shortcutIntent.CreatedAt.IsZero() </span><span class="cov8" title="1">{
+                shortcutIntent.CreatedAt = utils.NowUTC()
+        }</span> else<span class="cov8" title="1"> {
+                shortcutIntent.CreatedAt = shortcutIntent.CreatedAt.UTC()
+        }</span>
+        <span class="cov8" title="1">var shortcutIntentID uuid.UUID
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(query,
+                        shortcutIntent.UserID,
+                        shortcutIntent.EnvelopeID,
+                        shortcutIntent.Latitude,
+                        shortcutIntent.Longitude,
+                        shortcutIntent.Status,
+                        shortcutIntent.CreatedAt,
+                        shortcutIntent.TransactionID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRowContext(context.Background(), query,
+                        shortcutIntent.UserID,
+                        shortcutIntent.EnvelopeID,
+                        shortcutIntent.Latitude,
+                        shortcutIntent.Longitude,
+                        shortcutIntent.Status,
+                        shortcutIntent.CreatedAt,
+                        shortcutIntent.TransactionID,
+                )
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;shortcutIntentID); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">shortcutIntent.ID = shortcutIntentID
+        return shortcutIntentID, nil</span>
+}
+
+func (r *pgShortcutIntentRepo) GetShortcutIntentByID(id uuid.UUID) (*core.ShortcutIntent, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
+                FROM shortcut_intent
+                WHERE id = $1
+        `
+
+        // validation checks
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("shortcut intent UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">shortcutIntent := &amp;core.ShortcutIntent{}
+        err := r.db.QueryRowContext(context.Background(), query, id).Scan(
+                &amp;shortcutIntent.ID,
+                &amp;shortcutIntent.UserID,
+                &amp;shortcutIntent.EnvelopeID,
+                &amp;shortcutIntent.Latitude,
+                &amp;shortcutIntent.Longitude,
+                &amp;shortcutIntent.Status,
+                &amp;shortcutIntent.CreatedAt,
+                &amp;shortcutIntent.TransactionID,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return shortcutIntent, nil</span>
+}
+
+func (r *pgShortcutIntentRepo) GetShortcutIntentsByUserUUID(userUUID uuid.UUID) ([]*core.ShortcutIntent, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
+                FROM shortcut_intent
+                WHERE user_id = $1
+        `
+
+        // validation checks
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var shortcutIntents []*core.ShortcutIntent
+        for rows.Next() </span><span class="cov8" title="1">{
+                shortcutIntent := &amp;core.ShortcutIntent{}
+                if err := rows.Scan(
+                        &amp;shortcutIntent.ID,
+                        &amp;shortcutIntent.UserID,
+                        &amp;shortcutIntent.EnvelopeID,
+                        &amp;shortcutIntent.Latitude,
+                        &amp;shortcutIntent.Longitude,
+                        &amp;shortcutIntent.Status,
+                        &amp;shortcutIntent.CreatedAt,
+                        &amp;shortcutIntent.TransactionID,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">shortcutIntents = append(shortcutIntents, shortcutIntent)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return shortcutIntents, nil</span>
+}
+
+func (r *pgShortcutIntentRepo) UpdateShortcutIntent(shortcutIntent *core.ShortcutIntent, Tx *sql.Tx) error <span class="cov8" title="1">{
+        query := `
+                UPDATE shortcut_intent
+                SET envelope_id = $1, latitude = $2, longitude = $3, status = $4, created_at = $5, transaction_id = $6
+                WHERE id = $7
+        `
+
+        // validation checks
+        if shortcutIntent.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("shortcut intent UUID is required")
+        }</span>
+        <span class="cov8" title="1">if shortcutIntent.Status == "" </span><span class="cov8" title="1">{
+                return errors.New("shortcut intent status cannot be empty")
+        }</span>
+
+        <span class="cov8" title="1">if Tx != nil </span><span class="cov8" title="1">{
+                _, err := Tx.Exec(query,
+                        shortcutIntent.EnvelopeID,
+                        shortcutIntent.Latitude,
+                        shortcutIntent.Longitude,
+                        shortcutIntent.Status,
+                        shortcutIntent.CreatedAt,
+                        shortcutIntent.TransactionID,
+                        shortcutIntent.ID,
+                )
+                return err
+        }</span>
+
+        <span class="cov8" title="1">_, err := r.db.ExecContext(context.Background(), query,
+                shortcutIntent.EnvelopeID,
+                shortcutIntent.Latitude,
+                shortcutIntent.Longitude,
+                shortcutIntent.Status,
+                shortcutIntent.CreatedAt,
+                shortcutIntent.TransactionID,
+                shortcutIntent.ID,
+        )
+        return err</span>
+}
+
+func (r *pgShortcutIntentRepo) DeleteShortcutIntent(id uuid.UUID) error <span class="cov8" title="1">{
+        query := `
+                DELETE FROM shortcut_intent
+                WHERE id = $1
+        `
+
+        // validation checks
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("shortcut intent UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">_, err := r.db.ExecContext(context.Background(), query, id)
+        return err</span>
+}
+
+func (r *pgShortcutIntentRepo) GetPendingRecentShortcutIntent(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_id, envelope_id, latitude, longitude, status, created_at, transaction_id
+                FROM shortcut_intent
+                WHERE user_id = $1 AND status = $2 AND created_at BETWEEN $3 AND $4
+        `
+
+        // validation checks
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if time_lowerbound.IsZero() || time_upperbound.IsZero() </span><span class="cov8" title="1">{
+                return nil, errors.New("time lowerbound and upperbound are required")
+        }</span>
+        <span class="cov8" title="1">if time_lowerbound.After(time_upperbound) </span><span class="cov8" title="1">{
+                return nil, errors.New("time lowerbound cannot be after time upperbound")
+        }</span>
+
+        <span class="cov8" title="1">shortcutIntent := &amp;core.ShortcutIntent{}
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                err = Tx.QueryRow(query, userUUID, core.StatusPending, time_lowerbound, time_upperbound).Scan(
+                        &amp;shortcutIntent.ID,
+                        &amp;shortcutIntent.UserID,
+                        &amp;shortcutIntent.EnvelopeID,
+                        &amp;shortcutIntent.Latitude,
+                        &amp;shortcutIntent.Longitude,
+                        &amp;shortcutIntent.Status,
+                        &amp;shortcutIntent.CreatedAt,
+                        &amp;shortcutIntent.TransactionID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRowContext(context.Background(), query, userUUID, core.StatusPending, time_lowerbound, time_upperbound).Scan(
+                        &amp;shortcutIntent.ID,
+                        &amp;shortcutIntent.UserID,
+                        &amp;shortcutIntent.EnvelopeID,
+                        &amp;shortcutIntent.Latitude,
+                        &amp;shortcutIntent.Longitude,
+                        &amp;shortcutIntent.Status,
+                        &amp;shortcutIntent.CreatedAt,
+                        &amp;shortcutIntent.TransactionID,
+                )
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return shortcutIntent, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package db
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "time"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+)
+
+type pgSubscriptionRepo struct {
+        db *sql.DB
+}
+
+func NewPgSubscriptionRepo(db *sql.DB) core.SubscriptionRepository <span class="cov8" title="1">{
+        return &amp;pgSubscriptionRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgSubscriptionRepo) CreateSubscription(sub *core.Subscription, tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        if sub.UserUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if sub.Name == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("name is required")
+        }</span>
+        <span class="cov8" title="1">if sub.AmountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if sub.BillingCycle == "" </span><span class="cov8" title="1">{
+                sub.BillingCycle = core.BillingCycleMonthly
+        }</span>
+        <span class="cov8" title="1">switch sub.BillingCycle </span>{
+        case core.BillingCycleWeekly, core.BillingCycleMonthly, core.BillingCycleQuarterly, core.BillingCycleYearly:<span class="cov8" title="1"></span>
+        default:<span class="cov8" title="1">
+                return uuid.Nil, errors.New("invalid billing cycle")</span>
+        }
+
+        <span class="cov8" title="1">if sub.Status == "" </span><span class="cov8" title="1">{
+                sub.Status = core.SubscriptionStatusActive
+        }</span>
+        <span class="cov8" title="1">switch sub.Status </span>{
+        case core.SubscriptionStatusActive, core.SubscriptionStatusPaused, core.SubscriptionStatusCancelled:<span class="cov8" title="1"></span>
+        default:<span class="cov8" title="1">
+                return uuid.Nil, errors.New("invalid status")</span>
+        }
+        <span class="cov8" title="1">if sub.PaymentMethod == "" </span><span class="cov8" title="1">{
+                sub.PaymentMethod = "bank_card"
+        }</span>
+        <span class="cov8" title="1">if sub.NextBillingDate.IsZero() </span><span class="cov8" title="1">{
+                sub.NextBillingDate = utils.NowUTC().AddDate(0, 1, 0)
+        }</span>
+
+        <span class="cov8" title="1">if sub.ChargeWindowHours &lt;= 0 </span><span class="cov8" title="1">{
+                sub.ChargeWindowHours = 48
+        }</span>
+
+        <span class="cov8" title="1">now := utils.NowUTC()
+        sub.CreatedAt = now
+        sub.UpdatedAt = now
+
+        query := `
+                INSERT INTO subscriptions (
+                        user_uuid, envelope_id, name, amount_e5, billing_cycle,
+                        next_billing_date, payment_method, status, auto_renew, notes,
+                        last_charged_at, last_transaction_id, merchant_pattern,
+                        charge_window_hours, occurrence_count,
+                        created_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                RETURNING id
+        `
+
+        var id uuid.UUID
+        var err error
+        if tx != nil </span><span class="cov8" title="1">{
+                err = tx.QueryRowContext(context.Background(), query,
+                        sub.UserUUID, sub.EnvelopeID, sub.Name, sub.AmountE5, sub.BillingCycle,
+                        sub.NextBillingDate, sub.PaymentMethod, sub.Status, sub.AutoRenew, sub.Notes,
+                        sub.LastChargedAt, sub.LastTransactionID, sub.MerchantPattern,
+                        sub.ChargeWindowHours, sub.OccurrenceCount,
+                        sub.CreatedAt, sub.UpdatedAt,
+                ).Scan(&amp;id)
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRowContext(context.Background(), query,
+                        sub.UserUUID, sub.EnvelopeID, sub.Name, sub.AmountE5, sub.BillingCycle,
+                        sub.NextBillingDate, sub.PaymentMethod, sub.Status, sub.AutoRenew, sub.Notes,
+                        sub.LastChargedAt, sub.LastTransactionID, sub.MerchantPattern,
+                        sub.ChargeWindowHours, sub.OccurrenceCount,
+                        sub.CreatedAt, sub.UpdatedAt,
+                ).Scan(&amp;id)
+        }</span>
+
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">sub.ID = id
+        return id, nil</span>
+}
+
+func (r *pgSubscriptionRepo) GetSubscriptionByID(id uuid.UUID) (*core.Subscription, error) <span class="cov8" title="1">{
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("subscription ID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_uuid, envelope_id, name, amount_e5, billing_cycle,
+                       next_billing_date, payment_method, status, auto_renew, notes,
+                       last_charged_at, last_transaction_id, merchant_pattern,
+                       charge_window_hours, occurrence_count,
+                       created_at, updated_at
+                FROM subscriptions
+                WHERE id = $1
+        `
+
+        sub := &amp;core.Subscription{}
+        var notes sql.NullString
+        var merchantPattern sql.NullString
+        err := r.db.QueryRowContext(context.Background(), query, id).Scan(
+                &amp;sub.ID, &amp;sub.UserUUID, &amp;sub.EnvelopeID, &amp;sub.Name, &amp;sub.AmountE5, &amp;sub.BillingCycle,
+                &amp;sub.NextBillingDate, &amp;sub.PaymentMethod, &amp;sub.Status, &amp;sub.AutoRenew, &amp;notes,
+                &amp;sub.LastChargedAt, &amp;sub.LastTransactionID, &amp;merchantPattern,
+                &amp;sub.ChargeWindowHours, &amp;sub.OccurrenceCount,
+                &amp;sub.CreatedAt, &amp;sub.UpdatedAt,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">if notes.Valid </span><span class="cov8" title="1">{
+                sub.Notes = notes.String
+        }</span>
+        <span class="cov8" title="1">if merchantPattern.Valid </span><span class="cov8" title="1">{
+                sub.MerchantPattern = merchantPattern.String
+        }</span>
+        <span class="cov8" title="1">return sub, nil</span>
+}
+
+func (r *pgSubscriptionRepo) GetSubscriptionsByUserUUID(userUUID uuid.UUID) ([]*core.Subscription, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_uuid, envelope_id, name, amount_e5, billing_cycle,
+                       next_billing_date, payment_method, status, auto_renew, notes,
+                       last_charged_at, last_transaction_id, merchant_pattern,
+                       charge_window_hours, occurrence_count,
+                       created_at, updated_at
+                FROM subscriptions
+                WHERE user_uuid = $1
+                ORDER BY next_billing_date ASC, created_at DESC
+        `
+
+        rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var subscriptions []*core.Subscription
+        for rows.Next() </span><span class="cov8" title="1">{
+                sub := &amp;core.Subscription{}
+                var notes sql.NullString
+                var merchantPattern sql.NullString
+                if err := rows.Scan(
+                        &amp;sub.ID, &amp;sub.UserUUID, &amp;sub.EnvelopeID, &amp;sub.Name, &amp;sub.AmountE5, &amp;sub.BillingCycle,
+                        &amp;sub.NextBillingDate, &amp;sub.PaymentMethod, &amp;sub.Status, &amp;sub.AutoRenew, &amp;notes,
+                        &amp;sub.LastChargedAt, &amp;sub.LastTransactionID, &amp;merchantPattern,
+                        &amp;sub.ChargeWindowHours, &amp;sub.OccurrenceCount,
+                        &amp;sub.CreatedAt, &amp;sub.UpdatedAt,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">if notes.Valid </span><span class="cov8" title="1">{
+                        sub.Notes = notes.String
+                }</span>
+                <span class="cov8" title="1">if merchantPattern.Valid </span><span class="cov8" title="1">{
+                        sub.MerchantPattern = merchantPattern.String
+                }</span>
+                <span class="cov8" title="1">subscriptions = append(subscriptions, sub)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return subscriptions, nil</span>
+}
+
+func (r *pgSubscriptionRepo) GetDueSubscriptions(asOf time.Time, tx *sql.Tx) ([]*core.Subscription, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_uuid, envelope_id, name, amount_e5, billing_cycle,
+                       next_billing_date, payment_method, status, auto_renew, notes,
+                       last_charged_at, last_transaction_id, merchant_pattern,
+                       charge_window_hours, occurrence_count,
+                       created_at, updated_at
+                FROM subscriptions
+                WHERE status = 'active' AND auto_renew = true AND next_billing_date &lt;= $1
+                ORDER BY next_billing_date ASC
+        `
+
+        var rows *sql.Rows
+        var err error
+        if tx != nil </span><span class="cov8" title="1">{
+                rows, err = tx.QueryContext(context.Background(), query, asOf)
+        }</span> else<span class="cov8" title="1"> {
+                rows, err = r.db.QueryContext(context.Background(), query, asOf)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var subscriptions []*core.Subscription
+        for rows.Next() </span><span class="cov8" title="1">{
+                sub := &amp;core.Subscription{}
+                var notes sql.NullString
+                var merchantPattern sql.NullString
+                if err := rows.Scan(
+                        &amp;sub.ID, &amp;sub.UserUUID, &amp;sub.EnvelopeID, &amp;sub.Name, &amp;sub.AmountE5, &amp;sub.BillingCycle,
+                        &amp;sub.NextBillingDate, &amp;sub.PaymentMethod, &amp;sub.Status, &amp;sub.AutoRenew, &amp;notes,
+                        &amp;sub.LastChargedAt, &amp;sub.LastTransactionID, &amp;merchantPattern,
+                        &amp;sub.ChargeWindowHours, &amp;sub.OccurrenceCount,
+                        &amp;sub.CreatedAt, &amp;sub.UpdatedAt,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">if notes.Valid </span><span class="cov8" title="1">{
+                        sub.Notes = notes.String
+                }</span>
+                <span class="cov8" title="1">if merchantPattern.Valid </span><span class="cov8" title="1">{
+                        sub.MerchantPattern = merchantPattern.String
+                }</span>
+                <span class="cov8" title="1">subscriptions = append(subscriptions, sub)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return subscriptions, nil</span>
+}
+
+func (r *pgSubscriptionRepo) UpdateSubscription(sub *core.Subscription, tx *sql.Tx) error <span class="cov8" title="1">{
+        if sub.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("subscription ID is required")
+        }</span>
+        <span class="cov8" title="1">if sub.Name == "" </span><span class="cov8" title="1">{
+                return errors.New("name is required")
+        }</span>
+        <span class="cov8" title="1">if sub.AmountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return errors.New("amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if sub.BillingCycle == "" </span><span class="cov8" title="1">{
+                sub.BillingCycle = core.BillingCycleMonthly
+        }</span>
+        <span class="cov8" title="1">switch sub.BillingCycle </span>{
+        case core.BillingCycleWeekly, core.BillingCycleMonthly, core.BillingCycleQuarterly, core.BillingCycleYearly:<span class="cov8" title="1"></span>
+        default:<span class="cov8" title="1">
+                return errors.New("invalid billing cycle")</span>
+        }
+        <span class="cov8" title="1">if sub.Status == "" </span><span class="cov8" title="1">{
+                sub.Status = core.SubscriptionStatusActive
+        }</span>
+        <span class="cov8" title="1">switch sub.Status </span>{
+        case core.SubscriptionStatusActive, core.SubscriptionStatusPaused, core.SubscriptionStatusCancelled:<span class="cov8" title="1"></span>
+        default:<span class="cov8" title="1">
+                return errors.New("invalid status")</span>
+        }
+
+        <span class="cov8" title="1">sub.UpdatedAt = utils.NowUTC()
+
+        query := `
+                UPDATE subscriptions
+                SET envelope_id = $1, name = $2, amount_e5 = $3, billing_cycle = $4,
+                    next_billing_date = $5, payment_method = $6, status = $7, auto_renew = $8,
+                    notes = $9, last_charged_at = $10, last_transaction_id = $11,
+                    merchant_pattern = $12, charge_window_hours = $13, occurrence_count = $14,
+                    updated_at = $15
+                WHERE id = $16
+        `
+
+        var res sql.Result
+        var err error
+        if tx != nil </span><span class="cov8" title="1">{
+                res, err = tx.ExecContext(context.Background(), query,
+                        sub.EnvelopeID, sub.Name, sub.AmountE5, sub.BillingCycle,
+                        sub.NextBillingDate, sub.PaymentMethod, sub.Status, sub.AutoRenew,
+                        sub.Notes, sub.LastChargedAt, sub.LastTransactionID,
+                        sub.MerchantPattern, sub.ChargeWindowHours, sub.OccurrenceCount,
+                        sub.UpdatedAt, sub.ID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                res, err = r.db.ExecContext(context.Background(), query,
+                        sub.EnvelopeID, sub.Name, sub.AmountE5, sub.BillingCycle,
+                        sub.NextBillingDate, sub.PaymentMethod, sub.Status, sub.AutoRenew,
+                        sub.Notes, sub.LastChargedAt, sub.LastTransactionID,
+                        sub.MerchantPattern, sub.ChargeWindowHours, sub.OccurrenceCount,
+                        sub.UpdatedAt, sub.ID,
+                )
+        }</span>
+
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">rowsAffected, err := res.RowsAffected()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if rowsAffected == 0 </span><span class="cov8" title="1">{
+                return errors.New("subscription not found")
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (r *pgSubscriptionRepo) DeleteSubscription(id uuid.UUID) error <span class="cov8" title="1">{
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("subscription ID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `DELETE FROM subscriptions WHERE id = $1`
+        res, err := r.db.ExecContext(context.Background(), query, id)
+        if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">rowsAffected, err := res.RowsAffected()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if rowsAffected == 0 </span><span class="cov8" title="1">{
+                return errors.New("subscription not found")
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package db
+
+import (
+        "database/sql"
+        "errors"
+        "time"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+        "github.com/lib/pq"
+)
+
+type pgTokenRepo struct {
+        db *sql.DB
+}
+
+func NewTokenRepo(db *sql.DB) core.TokenRepository <span class="cov8" title="1">{
+        return &amp;pgTokenRepo{
+                db: db,
+        }
+}</span>
+
+func nullTimePtr(t *time.Time) any <span class="cov8" title="1">{
+        if t == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return *t</span>
+}
+
+func nullTime(t time.Time) any <span class="cov8" title="1">{
+        if t.IsZero() </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return t</span>
+}
+
+func (r *pgTokenRepo) CreateToken(token *core.Token, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        if token.UserUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if token.Token == uuid.Nil </span><span class="cov8" title="1">{
+                token.Token = uuid.New()
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                INSERT INTO user_tokens (user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()), COALESCE($9, NOW()))
+        `
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                _, err = Tx.Exec(
+                        query,
+                        token.UserUUID,
+                        token.Token,
+                        token.Prefix,
+                        token.Name,
+                        pq.Array(token.Scope),
+                        nullTimePtr(token.ExpiresAt),
+                        nullTimePtr(token.LastUsedAt),
+                        nullTime(token.CreatedAt),
+                        nullTime(token.UpdatedAt),
+                )
+        }</span> else<span class="cov8" title="1"> {
+                _, err = r.db.Exec(
+                        query,
+                        token.UserUUID,
+                        token.Token,
+                        token.Prefix,
+                        token.Name,
+                        pq.Array(token.Scope),
+                        nullTimePtr(token.ExpiresAt),
+                        nullTimePtr(token.LastUsedAt),
+                        nullTime(token.CreatedAt),
+                        nullTime(token.UpdatedAt),
+                )
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return token.Token, nil</span>
+
+}
+
+func (r *pgTokenRepo) DeleteToken(userUUID uuid.UUID) error <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">query := `
+                DELETE FROM user_tokens WHERE user_id = $1
+        `
+        _, err := r.db.Exec(query, userUUID)
+        return err</span>
+}
+
+func (r *pgTokenRepo) GetActiveTokenWithUserUUID(userUUID uuid.UUID) (*core.Token, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at
+                FROM user_tokens
+                WHERE user_id = $1
+        `
+        token := &amp;core.Token{}
+        var expiresAt, lastUsedAt sql.NullTime
+
+        err := r.db.QueryRow(query, userUUID).Scan(
+                &amp;token.UserUUID,
+                &amp;token.Token,
+                &amp;token.Prefix,
+                &amp;token.Name,
+                pq.Array(&amp;token.Scope),
+                &amp;expiresAt,
+                &amp;lastUsedAt,
+                &amp;token.CreatedAt,
+                &amp;token.UpdatedAt,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">if expiresAt.Valid </span><span class="cov8" title="1">{
+                token.ExpiresAt = &amp;expiresAt.Time
+        }</span>
+        <span class="cov8" title="1">if lastUsedAt.Valid </span><span class="cov8" title="1">{
+                token.LastUsedAt = &amp;lastUsedAt.Time
+        }</span>
+
+        <span class="cov8" title="1">return token, nil</span>
+}
+
+func (r *pgTokenRepo) GetToken(token uuid.UUID) (*core.Token, error) <span class="cov8" title="1">{
+        if token == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("token is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT user_id, token_uuid, prefix, name, scopes, expires_at, last_used_at, created_at, updated_at
+                FROM user_tokens
+                WHERE token_uuid = $1
+        `
+        tokenObj := &amp;core.Token{}
+        var expiresAt, lastUsedAt sql.NullTime
+
+        err := r.db.QueryRow(query, token).Scan(
+                &amp;tokenObj.UserUUID,
+                &amp;tokenObj.Token,
+                &amp;tokenObj.Prefix,
+                &amp;tokenObj.Name,
+                pq.Array(&amp;tokenObj.Scope),
+                &amp;expiresAt,
+                &amp;lastUsedAt,
+                &amp;tokenObj.CreatedAt,
+                &amp;tokenObj.UpdatedAt,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">if expiresAt.Valid </span><span class="cov8" title="1">{
+                tokenObj.ExpiresAt = &amp;expiresAt.Time
+        }</span>
+        <span class="cov8" title="1">if lastUsedAt.Valid </span><span class="cov8" title="1">{
+                tokenObj.LastUsedAt = &amp;lastUsedAt.Time
+        }</span>
+
+        <span class="cov8" title="1">timeNow := utils.NowUTC()
+        tokenObj.LastUsedAt = &amp;timeNow
+        r.UpdateToken(tokenObj)
+
+        return tokenObj, nil</span>
+}
+
+func (r *pgTokenRepo) UpdateToken(token *core.Token) error <span class="cov8" title="1">{
+        if token.UserUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                UPDATE user_tokens
+                SET 
+                token_uuid = $2,
+                prefix = $3,
+                name = $4,
+                scopes = $5,
+                expires_at = $6,
+                last_used_at = $7,
+                updated_at = COALESCE($8, NOW())
+                WHERE user_id = $1
+        `
+        _, err := r.db.Exec(
+                query,
+                token.UserUUID,
+                token.Token,
+                token.Prefix,
+                token.Name,
+                pq.Array(token.Scope),
+                nullTimePtr(token.ExpiresAt),
+                nullTimePtr(token.LastUsedAt),
+                nullTime(token.UpdatedAt),
+        )
+        return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package db
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "fmt"
+        "math"
+        "sort"
+        "strings"
+        "time"
+
+        "github.com/google/uuid"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+)
+
+type pgTransactionRowsRepo struct {
+        db *sql.DB
+}
+
+func NewPgTransactionRowsRepo(db *sql.DB) core.TransactionRepository <span class="cov8" title="1">{
+        return &amp;pgTransactionRowsRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgTransactionRowsRepo) CreateTransaction(txn *core.Transaction, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        query := `
+                INSERT INTO transactionrows (user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id, description, wishlist_item_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+        `
+
+        // validation checks
+        if txn.AmountE5 &lt; 0 </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("transaction amount cannot be negative")
+        }</span>
+        <span class="cov8" title="1">if txn.CountryISO == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("transaction country ISO cannot be empty")
+        }</span>
+        <span class="cov8" title="1">if txn.Type == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("transaction type cannot be empty")
+        }</span>
+        <span class="cov8" title="1">if txn.CreatedAt.IsZero() </span><span class="cov8" title="1">{
+                txn.CreatedAt = utils.NowUTC()
+        }</span> else<span class="cov0" title="0"> {
+                txn.CreatedAt = txn.CreatedAt.UTC()
+        }</span>
+        <span class="cov8" title="1">var txnID uuid.UUID
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(query,
+                        txn.UserID,
+                        txn.EnvelopeID,
+                        txn.AmountE5,
+                        txn.CountryISO,
+                        txn.PaymentMethod,
+                        txn.Type,
+                        txn.CreatedAt,
+                        txn.ShortcutIntentID,
+                        txn.Description,
+                        txn.WishlistItemID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(query,
+                        txn.UserID,
+                        txn.EnvelopeID,
+                        txn.AmountE5,
+                        txn.CountryISO,
+                        txn.PaymentMethod,
+                        txn.Type,
+                        txn.CreatedAt,
+                        txn.ShortcutIntentID,
+                        txn.Description,
+                        txn.WishlistItemID,
+                )
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;txnID); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">txn.ID = txnID
+        return txnID, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetTransactionByUUID(id uuid.UUID) (*core.Transaction, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id, COALESCE(description, ''), wishlist_item_id
+                FROM transactionrows
+                WHERE id = $1
+        `
+        // validation checks
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("transaction UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">txn := &amp;core.Transaction{}
+        err := r.db.QueryRowContext(context.Background(), query, id).Scan(
+                &amp;txn.ID,
+                &amp;txn.UserID,
+                &amp;txn.EnvelopeID,
+                &amp;txn.AmountE5,
+                &amp;txn.CountryISO,
+                &amp;txn.PaymentMethod,
+                &amp;txn.Type,
+                &amp;txn.CreatedAt,
+                &amp;txn.ShortcutIntentID,
+                &amp;txn.Description,
+                &amp;txn.WishlistItemID,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return txn, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetTransactionsByUserUUID(userID uuid.UUID) ([]*core.Transaction, error) <span class="cov8" title="1">{
+        query := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
+                FROM transactionrows
+                WHERE user_id = $1
+        `
+        // validation checks
+        if userID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">rows, err := r.db.QueryContext(context.Background(), query, userID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var transactions []*core.Transaction
+        for rows.Next() </span><span class="cov8" title="1">{
+                txn := &amp;core.Transaction{}
+                if err := rows.Scan(
+                        &amp;txn.ID,
+                        &amp;txn.UserID,
+                        &amp;txn.EnvelopeID,
+                        &amp;txn.AmountE5,
+                        &amp;txn.CountryISO,
+                        &amp;txn.PaymentMethod,
+                        &amp;txn.Type,
+                        &amp;txn.CreatedAt,
+                        &amp;txn.Description,
+                        &amp;txn.WishlistItemID,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">transactions = append(transactions, txn)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return transactions, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetTransactionByUserUUIDPaginated(userID uuid.UUID, lastTransactionCreatedAt time.Time, lastTransactionID uuid.UUID, limit int) ([]*core.Transaction, error) <span class="cov8" title="1">{
+        if userID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if limit &lt;= 0 </span><span class="cov8" title="1">{
+                return nil, errors.New("limit must be positive")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
+                FROM transactionrows
+                WHERE user_id = $1
+                  AND ($2::timestamptz IS NULL OR $3::uuid IS NULL OR (created_at, id) &lt; ($2, $3))
+                ORDER BY created_at DESC, id DESC
+                LIMIT $4;
+        `
+
+        var createdAtArg interface{} = lastTransactionCreatedAt
+        if lastTransactionCreatedAt.IsZero() </span><span class="cov8" title="1">{
+                createdAtArg = nil
+        }</span>
+
+        <span class="cov8" title="1">var idArg interface{} = lastTransactionID
+        if lastTransactionID == uuid.Nil </span><span class="cov8" title="1">{
+                idArg = nil
+        }</span>
+
+        <span class="cov8" title="1">rows, err := r.db.QueryContext(context.Background(), query, userID, createdAtArg, idArg, limit)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+        var transactions []*core.Transaction
+        for rows.Next() </span><span class="cov8" title="1">{
+                txn := &amp;core.Transaction{}
+                if err := rows.Scan(
+                        &amp;txn.ID,
+                        &amp;txn.UserID,
+                        &amp;txn.EnvelopeID,
+                        &amp;txn.AmountE5,
+                        &amp;txn.CountryISO,
+                        &amp;txn.PaymentMethod,
+                        &amp;txn.Type,
+                        &amp;txn.CreatedAt,
+                        &amp;txn.Description,
+                        &amp;txn.WishlistItemID,
+                ); err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">transactions = append(transactions, txn)</span>
+        }
+
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return transactions, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) UpdateTransaction(txn *core.Transaction, Tx *sql.Tx) error <span class="cov8" title="1">{
+        query := `
+                UPDATE transactionrows
+                SET envelope_id = $1, amount_e5 = $2, country_iso2 = $3, payment_method = $4, txn_type = $5, shortcut_intent_id = $6, description = $7, wishlist_item_id = $8
+                WHERE id = $9
+        `
+
+        // validation checks
+        if txn.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("transaction UUID is required")
+        }</span>
+        <span class="cov8" title="1">if txn.AmountE5 &lt; 0 </span><span class="cov8" title="1">{
+                return errors.New("transaction amount cannot be negative")
+        }</span>
+        <span class="cov8" title="1">if txn.CountryISO == "" </span><span class="cov8" title="1">{
+                return errors.New("transaction country ISO cannot be empty")
+        }</span>
+        <span class="cov8" title="1">if txn.Type == "" </span><span class="cov8" title="1">{
+                return errors.New("transaction type cannot be empty")
+        }</span>
+        <span class="cov8" title="1">var err error
+        if Tx != nil </span><span class="cov0" title="0">{
+                _, err = Tx.ExecContext(context.Background(), query,
+                        txn.EnvelopeID,
+                        txn.AmountE5,
+                        txn.CountryISO,
+                        txn.PaymentMethod,
+                        txn.Type,
+                        txn.ShortcutIntentID,
+                        txn.Description,
+                        txn.WishlistItemID,
+                        txn.ID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                _, err = r.db.ExecContext(context.Background(), query,
+                        txn.EnvelopeID,
+                        txn.AmountE5,
+                        txn.CountryISO,
+                        txn.PaymentMethod,
+                        txn.Type,
+                        txn.ShortcutIntentID,
+                        txn.Description,
+                        txn.WishlistItemID,
+                        txn.ID,
+                )
+        }</span>
+        <span class="cov8" title="1">return err</span>
+}
+
+func (r *pgTransactionRowsRepo) DeleteTransaction(id uuid.UUID) error <span class="cov8" title="1">{
+        query := `
+                DELETE FROM transactionrows
+                WHERE id = $1
+        `
+        // validation checks
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("transaction UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">_, err := r.db.ExecContext(context.Background(), query, id)
+        return err</span>
+}
+
+func (r *pgTransactionRowsRepo) GetTransactionByTime(time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) <span class="cov8" title="1">{
+        // validation checks
+        if time_lowerbound.IsZero() || time_upperbound.IsZero() </span><span class="cov8" title="1">{
+                return nil, errors.New("time range is required")
+        }</span>
+        <span class="cov8" title="1">query := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
+                FROM transactionrows
+                WHERE created_at BETWEEN $1 AND $2 AND shortcut_intent_id IS NULL
+                ORDER BY created_at DESC LIMIT 1
+        `
+        txn := &amp;core.Transaction{}
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRowContext(context.Background(), query, time_lowerbound, time_upperbound)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRowContext(context.Background(), query, time_lowerbound, time_upperbound)
+        }</span>
+        <span class="cov8" title="1">err := row.Scan(
+                &amp;txn.ID,
+                &amp;txn.UserID,
+                &amp;txn.EnvelopeID,
+                &amp;txn.AmountE5,
+                &amp;txn.CountryISO,
+                &amp;txn.PaymentMethod,
+                &amp;txn.Type,
+                &amp;txn.CreatedAt,
+                &amp;txn.ShortcutIntentID,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return txn, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetTransactionByAmountAndTime(userUUID uuid.UUID, amountE5 int64, time_lowerbound, time_upperbound time.Time, Tx *sql.Tx) (*core.Transaction, error) <span class="cov8" title="1">{
+        // validation checks
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if amountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return nil, errors.New("amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if time_lowerbound.IsZero() || time_upperbound.IsZero() </span><span class="cov8" title="1">{
+                return nil, errors.New("time range is required")
+        }</span>
+        <span class="cov8" title="1">if time_lowerbound.After(time_upperbound) </span><span class="cov8" title="1">{
+                return nil, errors.New("time lowerbound cannot be after time upperbound")
+        }</span>
+        <span class="cov8" title="1">query := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, shortcut_intent_id
+                FROM transactionrows
+                WHERE user_id = $1 AND amount_e5 = $2 AND created_at BETWEEN $3 AND $4
+                ORDER BY created_at DESC LIMIT 1
+        `
+        txn := &amp;core.Transaction{}
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRowContext(context.Background(), query, userUUID, amountE5, time_lowerbound, time_upperbound)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRowContext(context.Background(), query, userUUID, amountE5, time_lowerbound, time_upperbound)
+        }</span>
+        <span class="cov8" title="1">err := row.Scan(
+                &amp;txn.ID,
+                &amp;txn.UserID,
+                &amp;txn.EnvelopeID,
+                &amp;txn.AmountE5,
+                &amp;txn.CountryISO,
+                &amp;txn.PaymentMethod,
+                &amp;txn.Type,
+                &amp;txn.CreatedAt,
+                &amp;txn.ShortcutIntentID,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return txn, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetDashboardSummary(userUUID uuid.UUID) (*core.DashboardSummary, error) <span class="cov8" title="1">{
+        // validation checks
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">now := utils.NowUTC()
+        prevStart, prevEnd, err := utils.GetPreviousCadenceStartAndEndTime(core.MonthlyCadence, now)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">currStart, currEnd, err := utils.GetCadenceStartAndEndTime(core.MonthlyCadence, now)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT 
+                        COALESCE((
+                                SELECT SUM(amount_e5)
+                                FROM transactionrows
+                                WHERE user_id = $1 AND txn_type = 'credit' AND created_at BETWEEN $2 AND $3
+                        ), 0) as prev_income_e5,
+                        COALESCE((
+                                SELECT SUM(amount_e5)
+                                FROM transactionrows
+                                WHERE user_id = $1 AND txn_type = 'credit' AND created_at BETWEEN $4 AND $5
+                        ), 0) as curr_income_e5,
+                        COALESCE((
+                                SELECT SUM(amount_e5)
+                                FROM transactionrows
+                                WHERE user_id = $1 AND txn_type = 'debit' AND created_at BETWEEN $4 AND $5
+                        ), 0) as total_expense_e5,
+                        COALESCE((
+                                SELECT SUM(amount_e5)
+                                FROM transactionrows
+                                WHERE user_id = $1 AND txn_type = 'debit' AND payment_method = 'bank_card' AND created_at BETWEEN $4 AND $5
+                        ), 0) as card_spent_e5,
+                        COALESCE((
+                                SELECT SUM(amount_e5)
+                                FROM transactionrows
+                                WHERE user_id = $1 AND txn_type = 'debit' AND payment_method = 'bank_account' AND created_at BETWEEN $4 AND $5
+                        ), 0) as bank_spent_e5,
+                        COALESCE((
+                                SELECT monthly_budget_e5
+                                FROM users
+                                WHERE uuid = $1
+                        ), 0) as fallback_budget_e5
+        `
+
+        dashboardSummary := &amp;core.DashboardSummary{}
+        var prevIncomeE5, currIncomeE5, totalExpenseE5, cardSpentE5, bankSpentE5, fallbackBudgetE5 int64
+
+        err = r.db.QueryRowContext(context.Background(), query, userUUID, prevStart, prevEnd, currStart, currEnd).Scan(
+                &amp;prevIncomeE5,
+                &amp;currIncomeE5,
+                &amp;totalExpenseE5,
+                &amp;cardSpentE5,
+                &amp;bankSpentE5,
+                &amp;fallbackBudgetE5,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                if err == sql.ErrNoRows </span><span class="cov8" title="1">{
+                        return dashboardSummary, nil
+                }</span>
+                <span class="cov8" title="1">return nil, err</span>
+        }
+
+        <span class="cov8" title="1">baseIncomeE5 := prevIncomeE5
+        if baseIncomeE5 == 0 &amp;&amp; fallbackBudgetE5 &gt; 0 </span><span class="cov8" title="1">{
+                baseIncomeE5 = fallbackBudgetE5
+        }</span>
+
+        <span class="cov8" title="1">bufferedIncomeE5 := currIncomeE5
+        var bufferedUsedE5 int64 = 0
+        var totalRemainingE5 int64 = 0
+
+        if totalExpenseE5 &lt;= baseIncomeE5 </span><span class="cov8" title="1">{
+                totalRemainingE5 = baseIncomeE5 - totalExpenseE5
+                bufferedUsedE5 = 0
+        }</span> else<span class="cov8" title="1"> {
+                deficit := totalExpenseE5 - baseIncomeE5
+                if deficit &lt;= bufferedIncomeE5 </span><span class="cov8" title="1">{
+                        bufferedUsedE5 = deficit
+                        totalRemainingE5 = 0
+                }</span> else<span class="cov8" title="1"> {
+                        bufferedUsedE5 = bufferedIncomeE5
+                        uncoveredDeficit := deficit - bufferedIncomeE5
+                        totalRemainingE5 = -uncoveredDeficit
+                }</span>
+        }
+
+        <span class="cov8" title="1">bufferedRemainingE5 := bufferedIncomeE5 - bufferedUsedE5
+        effectiveIncomeE5 := baseIncomeE5 + bufferedUsedE5
+
+        dashboardSummary.TotalIncomeE5 = effectiveIncomeE5
+        dashboardSummary.BaseIncomeE5 = baseIncomeE5
+        dashboardSummary.BufferedIncomeE5 = bufferedIncomeE5
+        dashboardSummary.BufferedUsedE5 = bufferedUsedE5
+        dashboardSummary.BufferedRemainingE5 = bufferedRemainingE5
+        dashboardSummary.TotalExpenseE5 = totalExpenseE5
+        dashboardSummary.TotalRemainingE5 = totalRemainingE5
+        dashboardSummary.CardSpentE5 = cardSpentE5
+        dashboardSummary.BankSpentE5 = bankSpentE5
+
+        return dashboardSummary, nil</span>
+}
+
+func (r *pgTransactionRowsRepo) GetMonthlyInsights(userUUID uuid.UUID, year int, month int) (*core.MonthlyInsightsReport, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if year &lt; 2000 || year &gt; 2100 </span><span class="cov8" title="1">{
+                return nil, errors.New("invalid year")
+        }</span>
+        <span class="cov8" title="1">if month &lt; 1 || month &gt; 12 </span><span class="cov8" title="1">{
+                return nil, errors.New("invalid month")
+        }</span>
+
+        <span class="cov8" title="1">startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+        endOfMonth := startOfMonth.AddDate(0, 1, 0)
+        daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+
+        now := utils.NowUTC()
+        isCurrentMonth := now.Year() == year &amp;&amp; int(now.Month()) == month
+        daysElapsed := daysInMonth
+        if isCurrentMonth </span><span class="cov8" title="1">{
+                if now.Day() &lt; daysInMonth </span><span class="cov8" title="1">{
+                        daysElapsed = now.Day()
+                }</span>
+        }
+
+        // 1. Fetch envelopes and groups for user
+        <span class="cov8" title="1">type envInfo struct {
+                name  string
+                group string
+        }
+        envelopeMap := make(map[string]envInfo)
+        envQuery := `
+                SELECT e.id, COALESCE(e.name, ''), COALESCE(eg.name, '')
+                FROM envelope e
+                LEFT JOIN envelope_group eg ON e.envelope_group_id = eg.id
+                WHERE e.user_uuid = $1
+        `
+        envRows, err := r.db.QueryContext(context.Background(), envQuery, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer envRows.Close()
+        for envRows.Next() </span><span class="cov8" title="1">{
+                var envID uuid.UUID
+                var envName, groupName string
+                if err := envRows.Scan(&amp;envID, &amp;envName, &amp;groupName); err == nil </span><span class="cov8" title="1">{
+                        envelopeMap[envID.String()] = envInfo{name: envName, group: groupName}
+                }</span>
+        }
+
+        // 2. Fetch subscriptions for user
+        <span class="cov8" title="1">subTxnIDs := make(map[uuid.UUID]bool)
+        var subNames []string
+        subQuery := `
+                SELECT last_transaction_id, name, COALESCE(merchant_pattern, '')
+                FROM subscriptions
+                WHERE user_uuid = $1
+        `
+        subRows, err := r.db.QueryContext(context.Background(), subQuery, userUUID)
+        if err == nil </span><span class="cov8" title="1">{
+                defer subRows.Close()
+                for subRows.Next() </span><span class="cov8" title="1">{
+                        var lastTxnID *uuid.UUID
+                        var subName, pattern string
+                        if err := subRows.Scan(&amp;lastTxnID, &amp;subName, &amp;pattern); err == nil </span><span class="cov8" title="1">{
+                                if lastTxnID != nil &amp;&amp; *lastTxnID != uuid.Nil </span><span class="cov8" title="1">{
+                                        subTxnIDs[*lastTxnID] = true
+                                }</span>
+                                <span class="cov8" title="1">if trimmed := strings.TrimSpace(strings.ToLower(subName)); trimmed != "" </span><span class="cov8" title="1">{
+                                        subNames = append(subNames, trimmed)
+                                }</span>
+                                <span class="cov8" title="1">if trimmed := strings.TrimSpace(strings.ToLower(pattern)); trimmed != "" </span><span class="cov8" title="1">{
+                                        subNames = append(subNames, trimmed)
+                                }</span>
+                        }
+                }
+        }
+
+        <span class="cov8" title="1">isSubTxn := func(t *core.Transaction) bool </span><span class="cov8" title="1">{
+                if t.ID != uuid.Nil &amp;&amp; subTxnIDs[t.ID] </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+                <span class="cov8" title="1">desc := strings.ToLower(t.Description)
+                if strings.HasPrefix(desc, "subscription:") </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+                <span class="cov8" title="1">for _, name := range subNames </span><span class="cov8" title="1">{
+                        if name != "" &amp;&amp; strings.Contains(desc, name) </span><span class="cov8" title="1">{
+                                return true
+                        }</span>
+                }
+                <span class="cov8" title="1">return false</span>
+        }
+
+        // 3. Fetch transactions for current month
+        <span class="cov8" title="1">txnQuery := `
+                SELECT id, user_id, envelope_id, amount_e5, country_iso2, payment_method, txn_type, created_at, COALESCE(description, ''), wishlist_item_id
+                FROM transactionrows
+                WHERE user_id = $1 AND created_at &gt;= $2 AND created_at &lt; $3
+                ORDER BY created_at ASC, id ASC
+        `
+        txnRows, err := r.db.QueryContext(context.Background(), txnQuery, userUUID, startOfMonth, endOfMonth)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer txnRows.Close()
+
+        var transactions []*core.Transaction
+        for txnRows.Next() </span><span class="cov8" title="1">{
+                txn := &amp;core.Transaction{}
+                if err := txnRows.Scan(
+                        &amp;txn.ID,
+                        &amp;txn.UserID,
+                        &amp;txn.EnvelopeID,
+                        &amp;txn.AmountE5,
+                        &amp;txn.CountryISO,
+                        &amp;txn.PaymentMethod,
+                        &amp;txn.Type,
+                        &amp;txn.CreatedAt,
+                        &amp;txn.Description,
+                        &amp;txn.WishlistItemID,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">transactions = append(transactions, txn)</span>
+        }
+
+        // 4. Fetch previous month debit sum
+        <span class="cov8" title="1">prevStart := startOfMonth.AddDate(0, -1, 0)
+        prevEnd := startOfMonth
+        var prevExpenseE5 int64
+        prevQuery := `
+                SELECT COALESCE(SUM(amount_e5), 0)
+                FROM transactionrows
+                WHERE user_id = $1 AND txn_type = 'debit' AND created_at &gt;= $2 AND created_at &lt; $3
+        `
+        _ = r.db.QueryRowContext(context.Background(), prevQuery, userUUID, prevStart, prevEnd).Scan(&amp;prevExpenseE5)
+
+        // 5. Aggregate metrics
+        var totalIncomeE5, totalExpenseE5, subscriptionExpenseE5, discretionaryExpenseE5 int64
+        var subscriptionCount int
+
+        type dailyBucket struct {
+                dateKey string
+                dayName string
+                totalE5 int64
+                txns    []*core.Transaction
+        }
+        dailyDiscretionaryMap := make(map[string]*dailyBucket)
+
+        type categoryBucket struct {
+                spentE5 int64
+                count   int
+        }
+        categorySpendMap := make(map[string]*categoryBucket)
+
+        type paymentBucket struct {
+                spentE5 int64
+                count   int
+        }
+        paymentMethodMap := make(map[string]*paymentBucket)
+
+        var largestTxn *core.Transaction
+
+        for _, t := range transactions </span><span class="cov8" title="1">{
+                if t.Type == "credit" </span><span class="cov8" title="1">{
+                        totalIncomeE5 += t.AmountE5
+                }</span> else<span class="cov8" title="1"> if t.Type == "debit" </span><span class="cov8" title="1">{
+                        totalExpenseE5 += t.AmountE5
+
+                        if isSubTxn(t) </span><span class="cov8" title="1">{
+                                subscriptionExpenseE5 += t.AmountE5
+                                subscriptionCount++
+                        }</span> else<span class="cov8" title="1"> {
+                                discretionaryExpenseE5 += t.AmountE5
+                                if largestTxn == nil || t.AmountE5 &gt; largestTxn.AmountE5 </span><span class="cov8" title="1">{
+                                        largestTxn = t
+                                }</span>
+
+                                <span class="cov8" title="1">dateKey := t.CreatedAt.UTC().Format("2006-01-02")
+                                bucket, ok := dailyDiscretionaryMap[dateKey]
+                                if !ok </span><span class="cov8" title="1">{
+                                        bucket = &amp;dailyBucket{
+                                                dateKey: dateKey,
+                                                dayName: t.CreatedAt.UTC().Weekday().String(),
+                                        }
+                                        dailyDiscretionaryMap[dateKey] = bucket
+                                }</span>
+                                <span class="cov8" title="1">bucket.totalE5 += t.AmountE5
+                                bucket.txns = append(bucket.txns, t)</span>
+                        }
+
+                        // Category aggregation
+                        <span class="cov8" title="1">envIDStr := "unassigned"
+                        if t.EnvelopeID != nil &amp;&amp; *t.EnvelopeID != uuid.Nil </span><span class="cov8" title="1">{
+                                envIDStr = t.EnvelopeID.String()
+                        }</span>
+                        <span class="cov8" title="1">cBucket, ok := categorySpendMap[envIDStr]
+                        if !ok </span><span class="cov8" title="1">{
+                                cBucket = &amp;categoryBucket{}
+                                categorySpendMap[envIDStr] = cBucket
+                        }</span>
+                        <span class="cov8" title="1">cBucket.spentE5 += t.AmountE5
+                        cBucket.count++
+
+                        // Payment method aggregation
+                        pm := strings.ToLower(t.PaymentMethod)
+                        if pm == "" </span><span class="cov0" title="0">{
+                                pm = "bank_card"
+                        }</span>
+                        <span class="cov8" title="1">pBucket, ok := paymentMethodMap[pm]
+                        if !ok </span><span class="cov8" title="1">{
+                                pBucket = &amp;paymentBucket{}
+                                paymentMethodMap[pm] = pBucket
+                        }</span>
+                        <span class="cov8" title="1">pBucket.spentE5 += t.AmountE5
+                        pBucket.count++</span>
+                }
+        }
+
+        // Peak spending day
+        <span class="cov8" title="1">var peakDay *core.PeakSpendDayInfo
+        var maxDailySpendE5 int64
+        for _, bucket := range dailyDiscretionaryMap </span><span class="cov8" title="1">{
+                if bucket.totalE5 &gt; maxDailySpendE5 </span><span class="cov8" title="1">{
+                        maxDailySpendE5 = bucket.totalE5
+                        sortedTxns := make([]*core.Transaction, len(bucket.txns))
+                        copy(sortedTxns, bucket.txns)
+                        sort.Slice(sortedTxns, func(i, j int) bool </span><span class="cov0" title="0">{
+                                return sortedTxns[i].AmountE5 &gt; sortedTxns[j].AmountE5
+                        }</span>)
+                        <span class="cov8" title="1">var topList []core.PeakSpendDayTransaction
+                        for i := 0; i &lt; len(sortedTxns) &amp;&amp; i &lt; 3; i++ </span><span class="cov8" title="1">{
+                                desc := sortedTxns[i].Description
+                                if desc == "" </span><span class="cov0" title="0">{
+                                        desc = "Discretionary Purchase"
+                                }</span>
+                                <span class="cov8" title="1">topList = append(topList, core.PeakSpendDayTransaction{
+                                        ID:            sortedTxns[i].ID.String(),
+                                        Description:   desc,
+                                        AmountE5:      sortedTxns[i].AmountE5,
+                                        PaymentMethod: sortedTxns[i].PaymentMethod,
+                                        Date:          sortedTxns[i].CreatedAt.UTC().Format(time.RFC3339),
+                                })</span>
+                        }
+                        <span class="cov8" title="1">peakDay = &amp;core.PeakSpendDayInfo{
+                                Date:             bucket.dateKey,
+                                DayName:          bucket.dayName,
+                                TotalSpentE5:     bucket.totalE5,
+                                TransactionCount: len(bucket.txns),
+                                TopTransactions:  topList,
+                        }</span>
+                }
+        }
+
+        // No spend days count
+        <span class="cov8" title="1">noSpendDaysCount := 0
+        for day := 1; day &lt;= daysElapsed; day++ </span><span class="cov8" title="1">{
+                dateKey := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+                if bucket, ok := dailyDiscretionaryMap[dateKey]; !ok || bucket.totalE5 == 0 </span><span class="cov8" title="1">{
+                        noSpendDaysCount++
+                }</span>
+        }
+
+        // Net savings and savings rate
+        <span class="cov8" title="1">netSavingsE5 := totalIncomeE5 - totalExpenseE5
+        var savingsRatePct float64
+        if totalIncomeE5 &gt; 0 </span><span class="cov8" title="1">{
+                savingsRatePct = math.Max(0, math.Round(float64(netSavingsE5)/float64(totalIncomeE5)*1000.0)/10.0)
+        }</span>
+
+        // Daily average
+        <span class="cov8" title="1">var dailyAverageE5 int64
+        if daysElapsed &gt; 0 </span><span class="cov8" title="1">{
+                dailyAverageE5 = discretionaryExpenseE5 / int64(daysElapsed)
+        }</span>
+
+        // Category splits
+        <span class="cov8" title="1">var categorySplits []core.CategorySpendSplit
+        for envIDStr, bucket := range categorySpendMap </span><span class="cov8" title="1">{
+                envName := "Unassigned Surplus"
+                groupName := "General"
+                if envIDStr != "unassigned" </span><span class="cov8" title="1">{
+                        if info, ok := envelopeMap[envIDStr]; ok </span><span class="cov8" title="1">{
+                                if info.name != "" </span><span class="cov8" title="1">{
+                                        envName = info.name
+                                }</span> else<span class="cov0" title="0"> {
+                                        envName = "Custom Category"
+                                }</span>
+                                <span class="cov8" title="1">if info.group != "" </span><span class="cov8" title="1">{
+                                        groupName = info.group
+                                }</span>
+                        }
+                }
+                <span class="cov8" title="1">var pct float64
+                if totalExpenseE5 &gt; 0 </span><span class="cov8" title="1">{
+                        pct = math.Round(float64(bucket.spentE5)/float64(totalExpenseE5)*1000.0) / 10.0
+                }</span>
+                <span class="cov8" title="1">categorySplits = append(categorySplits, core.CategorySpendSplit{
+                        EnvelopeID:       envIDStr,
+                        EnvelopeName:     envName,
+                        GroupName:        groupName,
+                        SpentE5:          bucket.spentE5,
+                        Percentage:       pct,
+                        TransactionCount: bucket.count,
+                })</span>
+        }
+        <span class="cov8" title="1">sort.Slice(categorySplits, func(i, j int) bool </span><span class="cov8" title="1">{
+                return categorySplits[i].SpentE5 &gt; categorySplits[j].SpentE5
+        }</span>)
+
+        // Payment method splits
+        <span class="cov8" title="1">paymentMethodLabels := map[string]string{
+                "bank_card":    "Debit / Credit Card",
+                "upi":          "UPI AutoPay / QR",
+                "bank_account": "Bank Auto-Debit / Netbanking",
+                "back_account": "Bank Auto-Debit",
+        }
+        var pmSplits []core.PaymentMethodSplit
+        for method, bucket := range paymentMethodMap </span><span class="cov8" title="1">{
+                label, ok := paymentMethodLabels[method]
+                if !ok </span><span class="cov8" title="1">{
+                        label = strings.ToUpper(method)
+                }</span>
+                <span class="cov8" title="1">pmSplits = append(pmSplits, core.PaymentMethodSplit{
+                        Method:  method,
+                        Label:   label,
+                        SpentE5: bucket.spentE5,
+                        Count:   bucket.count,
+                })</span>
+        }
+        <span class="cov8" title="1">sort.Slice(pmSplits, func(i, j int) bool </span><span class="cov8" title="1">{
+                return pmSplits[i].SpentE5 &gt; pmSplits[j].SpentE5
+        }</span>)
+
+        // Previous month delta
+        <span class="cov8" title="1">var prevMonthDelta *core.PreviousMonthInsightsDelta
+        if prevExpenseE5 &gt; 0 </span><span class="cov8" title="1">{
+                deltaPct := math.Round(float64(totalExpenseE5-prevExpenseE5)/float64(prevExpenseE5)*1000.0) / 10.0
+                prevMonthDelta = &amp;core.PreviousMonthInsightsDelta{
+                        TotalExpenseE5: prevExpenseE5,
+                        DeltaPct:       deltaPct,
+                        IsLower:        totalExpenseE5 &lt;= prevExpenseE5,
+                }
+        }</span>
+
+        // Heatmap items
+        <span class="cov8" title="1">firstDayOffset := int(startOfMonth.Weekday())
+        dailyHeatmap := make([]core.DailySpendingHeatmapItem, 0, daysInMonth)
+        for day := 1; day &lt;= daysInMonth; day++ </span><span class="cov8" title="1">{
+                d := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+                dateKey := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+                dayOfWeek := int(d.Weekday())
+                dayName := d.Weekday().String()
+                isFuture := isCurrentMonth &amp;&amp; day &gt; now.Day()
+
+                var daySpentE5 int64
+                var txnCount int
+                var dayTxns []core.PeakSpendDayTransaction
+
+                if bucket, ok := dailyDiscretionaryMap[dateKey]; ok </span><span class="cov8" title="1">{
+                        daySpentE5 = bucket.totalE5
+                        txnCount = len(bucket.txns)
+                        for _, t := range bucket.txns </span><span class="cov8" title="1">{
+                                desc := t.Description
+                                if desc == "" </span><span class="cov0" title="0">{
+                                        desc = "Discretionary Purchase"
+                                }</span>
+                                <span class="cov8" title="1">dayTxns = append(dayTxns, core.PeakSpendDayTransaction{
+                                        ID:            t.ID.String(),
+                                        Description:   desc,
+                                        AmountE5:      t.AmountE5,
+                                        PaymentMethod: t.PaymentMethod,
+                                        Date:          t.CreatedAt.UTC().Format(time.RFC3339),
+                                })</span>
+                        }
+                }
+
+                <span class="cov8" title="1">intensity := 0
+                if !isFuture &amp;&amp; daySpentE5 &gt; 0 </span><span class="cov0" title="0">{
+                        if maxDailySpendE5 &gt; 0 </span><span class="cov0" title="0">{
+                                ratio := float64(daySpentE5) / float64(maxDailySpendE5)
+                                if ratio &lt;= 0.2 </span><span class="cov0" title="0">{
+                                        intensity = 1
+                                }</span> else<span class="cov0" title="0"> if ratio &lt;= 0.45 </span><span class="cov0" title="0">{
+                                        intensity = 2
+                                }</span> else<span class="cov0" title="0"> if ratio &lt;= 0.75 </span><span class="cov0" title="0">{
+                                        intensity = 3
+                                }</span> else<span class="cov0" title="0"> {
+                                        intensity = 4
+                                }</span>
+                        } else<span class="cov0" title="0"> {
+                                intensity = 1
+                        }</span>
+                }
+
+                <span class="cov8" title="1">dailyHeatmap = append(dailyHeatmap, core.DailySpendingHeatmapItem{
+                        Date:             dateKey,
+                        Day:              day,
+                        DayOfWeek:        dayOfWeek,
+                        DayName:          dayName,
+                        TotalSpentE5:     daySpentE5,
+                        TransactionCount: txnCount,
+                        IntensityLevel:   intensity,
+                        IsFuture:         isFuture,
+                        Transactions:     dayTxns,
+                })</span>
+        }
+
+        <span class="cov8" title="1">var largestTxnInfo *core.PeakSpendDayTransaction
+        if largestTxn != nil </span><span class="cov8" title="1">{
+                desc := largestTxn.Description
+                if desc == "" </span><span class="cov0" title="0">{
+                        desc = "Single Expense"
+                }</span>
+                <span class="cov8" title="1">largestTxnInfo = &amp;core.PeakSpendDayTransaction{
+                        ID:            largestTxn.ID.String(),
+                        Description:   desc,
+                        AmountE5:      largestTxn.AmountE5,
+                        PaymentMethod: largestTxn.PaymentMethod,
+                        Date:          largestTxn.CreatedAt.UTC().Format(time.RFC3339),
+                }</span>
+        }
+
+        <span class="cov8" title="1">return &amp;core.MonthlyInsightsReport{
+                Year:                   year,
+                Month:                  month,
+                MonthLabel:             fmt.Sprintf("%s %d", startOfMonth.Month().String(), year),
+                DaysInMonth:            daysInMonth,
+                DaysElapsed:            daysElapsed,
+                TotalIncomeE5:          totalIncomeE5,
+                TotalExpenseE5:         totalExpenseE5,
+                NetSavingsE5:           netSavingsE5,
+                SavingsRatePct:         savingsRatePct,
+                SubscriptionExpenseE5:  subscriptionExpenseE5,
+                DiscretionaryExpenseE5: discretionaryExpenseE5,
+                SubscriptionCount:      subscriptionCount,
+                PeakDay:                peakDay,
+                DailyHeatmap:           dailyHeatmap,
+                FirstDayOffset:         firstDayOffset,
+                MaxDailySpendE5:        maxDailySpendE5,
+                CategorySplits:         categorySplits,
+                NoSpendDaysCount:       noSpendDaysCount,
+                DailyAverageE5:         dailyAverageE5,
+                LargestTransaction:     largestTxnInfo,
+                PaymentMethodSplits:    pmSplits,
+                PreviousMonth:          prevMonthDelta,
+        }, nil</span>
+}
+
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package db
+
+import (
+        "database/sql"
+        "errors"
+        "strings"
+
+        "github.com/google/uuid"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+)
+
+type pgUserRepo struct {
+        db *sql.DB
+}
+
+func NewPgUserRepo(db *sql.DB) core.UserRepository <span class="cov8" title="1">{
+        return &amp;pgUserRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgUserRepo) CreateUser(user *core.User, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        query := `
+                INSERT INTO users (name, email, password_hash, monthly_budget_e5, salary_day)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING uuid
+        `
+
+        if strings.TrimSpace(user.Name) == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user name is required")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(user.Email) == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user email is required")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(user.PasswordHash) == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user password hash is required")
+        }</span>
+        <span class="cov8" title="1">if user.SalaryDay &lt;= 0 </span><span class="cov8" title="1">{
+                user.SalaryDay = 1
+        }</span>
+
+        <span class="cov8" title="1">var id uuid.UUID
+        var row *sql.Row
+        if Tx != nil </span><span class="cov8" title="1">{
+                row = Tx.QueryRow(query, user.Name, user.Email, user.PasswordHash, user.MonthlyBudgetE5, user.SalaryDay)
+        }</span> else<span class="cov8" title="1"> {
+                row = r.db.QueryRow(query, user.Name, user.Email, user.PasswordHash, user.MonthlyBudgetE5, user.SalaryDay)
+        }</span>
+        <span class="cov8" title="1">if err := row.Scan(&amp;id); err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return id, nil</span>
+}
+
+func (r *pgUserRepo) GetUserByUUID(id uuid.UUID) (*core.User, error) <span class="cov8" title="1">{
+        query := `
+                SELECT uuid, name, created_at, updated_at, monthly_budget_e5, salary_day
+                FROM users
+                WHERE uuid = $1
+        `
+
+        // validation checks
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">user := &amp;core.User{}
+        err := r.db.QueryRow(query, id).Scan(
+                &amp;user.UUID,
+                &amp;user.Name,
+                &amp;user.CreatedAt,
+                &amp;user.UpdatedAt,
+                &amp;user.MonthlyBudgetE5,
+                &amp;user.SalaryDay,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return user, nil</span>
+}
+
+func (r *pgUserRepo) GetUserByEmail(email string) (*core.User, error) <span class="cov8" title="1">{
+        query := `
+                SELECT uuid, name, created_at, updated_at, password_hash, email, monthly_budget_e5, salary_day
+                FROM users
+                WHERE email = $1
+        `
+        user := &amp;core.User{}
+        err := r.db.QueryRow(query, email).Scan(
+                &amp;user.UUID,
+                &amp;user.Name,
+                &amp;user.CreatedAt,
+                &amp;user.UpdatedAt,
+                &amp;user.PasswordHash,
+                &amp;user.Email,
+                &amp;user.MonthlyBudgetE5,
+                &amp;user.SalaryDay,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return user, nil</span>
+}
+
+func (r *pgUserRepo) UpdateBudgetSettings(userUUID uuid.UUID, monthlyBudgetE5 int64, salaryDay int, Tx *sql.Tx) error <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if monthlyBudgetE5 &lt; 0 </span><span class="cov8" title="1">{
+                return errors.New("monthly budget cannot be negative")
+        }</span>
+        <span class="cov8" title="1">if salaryDay &lt; 1 || salaryDay &gt; 31 </span><span class="cov8" title="1">{
+                return errors.New("salary day must be between 1 and 31")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                UPDATE users
+                SET monthly_budget_e5 = $1, salary_day = $2, updated_at = NOW()
+                WHERE uuid = $3
+        `
+
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                _, err = Tx.Exec(query, monthlyBudgetE5, salaryDay, userUUID)
+        }</span> else<span class="cov8" title="1"> {
+                _, err = r.db.Exec(query, monthlyBudgetE5, salaryDay, userUUID)
+        }</span>
+        <span class="cov8" title="1">return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package db
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+
+        "github.com/barathsurya2004/go-code/penne-service/internal/core"
+        "github.com/barathsurya2004/go-code/penne-service/internal/utils"
+        "github.com/google/uuid"
+)
+
+type pgWishlistRepo struct {
+        db *sql.DB
+}
+
+func NewPgWishlistRepo(db *sql.DB) core.WishlistRepository <span class="cov8" title="1">{
+        return &amp;pgWishlistRepo{
+                db: db,
+        }
+}</span>
+
+func (r *pgWishlistRepo) CreateWishlistItem(item *core.WishlistItem, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        if item.UserUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if item.Title == "" </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("title is required")
+        }</span>
+        <span class="cov8" title="1">if item.TargetAmountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("target amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if item.Priority &lt; 1 || item.Priority &gt; 5 </span><span class="cov8" title="1">{
+                item.Priority = 3
+        }</span>
+        <span class="cov8" title="1">if item.Urgency &lt; 1 || item.Urgency &gt; 5 </span><span class="cov8" title="1">{
+                item.Urgency = 3
+        }</span>
+        <span class="cov8" title="1">if item.ItemType == "" </span><span class="cov8" title="1">{
+                item.ItemType = "purchase"
+        }</span>
+        <span class="cov8" title="1">if item.Status == "" </span><span class="cov8" title="1">{
+                item.Status = "active"
+        }</span>
+
+        <span class="cov8" title="1">now := utils.NowUTC()
+        item.CreatedAt = now
+        item.UpdatedAt = now
+
+        query := `
+                INSERT INTO wishlist_items (
+                        user_uuid, title, target_amount_e5, saved_amount_e5,
+                        priority, urgency, item_type, status, target_date, notes,
+                        created_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                RETURNING id
+        `
+
+        var id uuid.UUID
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                err = Tx.QueryRowContext(context.Background(), query,
+                        item.UserUUID, item.Title, item.TargetAmountE5, item.SavedAmountE5,
+                        item.Priority, item.Urgency, item.ItemType, item.Status, item.TargetDate, item.Notes,
+                        item.CreatedAt, item.UpdatedAt,
+                ).Scan(&amp;id)
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRowContext(context.Background(), query,
+                        item.UserUUID, item.Title, item.TargetAmountE5, item.SavedAmountE5,
+                        item.Priority, item.Urgency, item.ItemType, item.Status, item.TargetDate, item.Notes,
+                        item.CreatedAt, item.UpdatedAt,
+                ).Scan(&amp;id)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return id, nil</span>
+}
+
+func (r *pgWishlistRepo) GetWishlistItemByID(id uuid.UUID) (*core.WishlistItem, error) <span class="cov8" title="1">{
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("wishlist item ID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_uuid, title, target_amount_e5, saved_amount_e5,
+                       priority, urgency, item_type, status, target_date, notes,
+                       created_at, updated_at
+                FROM wishlist_items
+                WHERE id = $1
+        `
+
+        item := &amp;core.WishlistItem{}
+        err := r.db.QueryRowContext(context.Background(), query, id).Scan(
+                &amp;item.ID, &amp;item.UserUUID, &amp;item.Title, &amp;item.TargetAmountE5, &amp;item.SavedAmountE5,
+                &amp;item.Priority, &amp;item.Urgency, &amp;item.ItemType, &amp;item.Status, &amp;item.TargetDate, &amp;item.Notes,
+                &amp;item.CreatedAt, &amp;item.UpdatedAt,
+        )
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return item, nil</span>
+}
+
+func (r *pgWishlistRepo) GetWishlistItemsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistItem, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_uuid, title, target_amount_e5, saved_amount_e5,
+                       priority, urgency, item_type, status, target_date, notes,
+                       created_at, updated_at
+                FROM wishlist_items
+                WHERE user_uuid = $1
+                ORDER BY created_at DESC
+        `
+
+        rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var items []*core.WishlistItem
+        for rows.Next() </span><span class="cov8" title="1">{
+                item := &amp;core.WishlistItem{}
+                if err := rows.Scan(
+                        &amp;item.ID, &amp;item.UserUUID, &amp;item.Title, &amp;item.TargetAmountE5, &amp;item.SavedAmountE5,
+                        &amp;item.Priority, &amp;item.Urgency, &amp;item.ItemType, &amp;item.Status, &amp;item.TargetDate, &amp;item.Notes,
+                        &amp;item.CreatedAt, &amp;item.UpdatedAt,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">items = append(items, item)</span>
+        }
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return items, nil</span>
+}
+
+func (r *pgWishlistRepo) GetActiveWishlistItemsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistItem, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, user_uuid, title, target_amount_e5, saved_amount_e5,
+                       priority, urgency, item_type, status, target_date, notes,
+                       created_at, updated_at
+                FROM wishlist_items
+                WHERE user_uuid = $1 AND status = 'active'
+                ORDER BY (priority * urgency) DESC, created_at ASC
+        `
+
+        rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var items []*core.WishlistItem
+        for rows.Next() </span><span class="cov8" title="1">{
+                item := &amp;core.WishlistItem{}
+                if err := rows.Scan(
+                        &amp;item.ID, &amp;item.UserUUID, &amp;item.Title, &amp;item.TargetAmountE5, &amp;item.SavedAmountE5,
+                        &amp;item.Priority, &amp;item.Urgency, &amp;item.ItemType, &amp;item.Status, &amp;item.TargetDate, &amp;item.Notes,
+                        &amp;item.CreatedAt, &amp;item.UpdatedAt,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">items = append(items, item)</span>
+        }
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return items, nil</span>
+}
+
+func (r *pgWishlistRepo) UpdateWishlistItem(item *core.WishlistItem, Tx *sql.Tx) error <span class="cov8" title="1">{
+        if item.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("wishlist item ID is required")
+        }</span>
+        <span class="cov8" title="1">if item.Title == "" </span><span class="cov8" title="1">{
+                return errors.New("title is required")
+        }</span>
+        <span class="cov8" title="1">if item.TargetAmountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return errors.New("target amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if item.Priority &lt; 1 || item.Priority &gt; 5 </span><span class="cov8" title="1">{
+                return errors.New("priority must be between 1 and 5")
+        }</span>
+        <span class="cov8" title="1">if item.Urgency &lt; 1 || item.Urgency &gt; 5 </span><span class="cov8" title="1">{
+                return errors.New("urgency must be between 1 and 5")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                UPDATE wishlist_items
+                SET title = $1, target_amount_e5 = $2, saved_amount_e5 = $3,
+                    priority = $4, urgency = $5, item_type = $6, status = $7,
+                    target_date = $8, notes = $9, updated_at = NOW()
+                WHERE id = $10
+        `
+
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                _, err = Tx.ExecContext(context.Background(), query,
+                        item.Title, item.TargetAmountE5, item.SavedAmountE5,
+                        item.Priority, item.Urgency, item.ItemType, item.Status,
+                        item.TargetDate, item.Notes, item.ID,
+                )
+        }</span> else<span class="cov8" title="1"> {
+                _, err = r.db.ExecContext(context.Background(), query,
+                        item.Title, item.TargetAmountE5, item.SavedAmountE5,
+                        item.Priority, item.Urgency, item.ItemType, item.Status,
+                        item.TargetDate, item.Notes, item.ID,
+                )
+        }</span>
+        <span class="cov8" title="1">return err</span>
+}
+
+func (r *pgWishlistRepo) DeleteWishlistItem(id uuid.UUID) error <span class="cov8" title="1">{
+        if id == uuid.Nil </span><span class="cov8" title="1">{
+                return errors.New("wishlist item ID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `DELETE FROM wishlist_items WHERE id = $1`
+        _, err := r.db.ExecContext(context.Background(), query, id)
+        return err</span>
+}
+
+func (r *pgWishlistRepo) CreateWishlistAllocation(alloc *core.WishlistAllocation, Tx *sql.Tx) (uuid.UUID, error) <span class="cov8" title="1">{
+        if alloc.WishlistItemID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("wishlist item ID is required")
+        }</span>
+        <span class="cov8" title="1">if alloc.UserUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("user UUID is required")
+        }</span>
+        <span class="cov8" title="1">if alloc.AmountE5 &lt;= 0 </span><span class="cov8" title="1">{
+                return uuid.Nil, errors.New("allocation amount must be greater than zero")
+        }</span>
+        <span class="cov8" title="1">if alloc.SourceType == "" </span><span class="cov8" title="1">{
+                alloc.SourceType = "cycle_surplus"
+        }</span>
+        <span class="cov8" title="1">if alloc.CycleDate.IsZero() </span><span class="cov8" title="1">{
+                alloc.CycleDate = utils.NowUTC()
+        }</span>
+        <span class="cov8" title="1">alloc.CreatedAt = utils.NowUTC()
+
+        query := `
+                INSERT INTO wishlist_allocations (
+                        wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+        `
+
+        var id uuid.UUID
+        var err error
+        if Tx != nil </span><span class="cov8" title="1">{
+                err = Tx.QueryRowContext(context.Background(), query,
+                        alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt, alloc.TransactionID,
+                ).Scan(&amp;id)
+        }</span> else<span class="cov8" title="1"> {
+                err = r.db.QueryRowContext(context.Background(), query,
+                        alloc.WishlistItemID, alloc.UserUUID, alloc.AmountE5, alloc.SourceType, alloc.CycleDate, alloc.CreatedAt, alloc.TransactionID,
+                ).Scan(&amp;id)
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return uuid.Nil, err
+        }</span>
+        <span class="cov8" title="1">return id, nil</span>
+}
+
+func (r *pgWishlistRepo) GetWishlistAllocationsByItemID(itemID uuid.UUID) ([]*core.WishlistAllocation, error) <span class="cov8" title="1">{
+        if itemID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("wishlist item ID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
+                FROM wishlist_allocations
+                WHERE wishlist_item_id = $1
+                ORDER BY created_at DESC
+        `
+
+        rows, err := r.db.QueryContext(context.Background(), query, itemID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var allocs []*core.WishlistAllocation
+        for rows.Next() </span><span class="cov8" title="1">{
+                alloc := &amp;core.WishlistAllocation{}
+                if err := rows.Scan(
+                        &amp;alloc.ID, &amp;alloc.WishlistItemID, &amp;alloc.UserUUID, &amp;alloc.AmountE5,
+                        &amp;alloc.SourceType, &amp;alloc.CycleDate, &amp;alloc.CreatedAt, &amp;alloc.TransactionID,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">allocs = append(allocs, alloc)</span>
+        }
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return allocs, nil</span>
+}
+
+func (r *pgWishlistRepo) GetWishlistAllocationsByUserUUID(userUUID uuid.UUID) ([]*core.WishlistAllocation, error) <span class="cov8" title="1">{
+        if userUUID == uuid.Nil </span><span class="cov8" title="1">{
+                return nil, errors.New("user UUID is required")
+        }</span>
+
+        <span class="cov8" title="1">query := `
+                SELECT id, wishlist_item_id, user_uuid, amount_e5, source_type, cycle_date, created_at, transaction_id
+                FROM wishlist_allocations
+                WHERE user_uuid = $1
+                ORDER BY created_at DESC
+        `
+
+        rows, err := r.db.QueryContext(context.Background(), query, userUUID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        var allocs []*core.WishlistAllocation
+        for rows.Next() </span><span class="cov8" title="1">{
+                alloc := &amp;core.WishlistAllocation{}
+                if err := rows.Scan(
+                        &amp;alloc.ID, &amp;alloc.WishlistItemID, &amp;alloc.UserUUID, &amp;alloc.AmountE5,
+                        &amp;alloc.SourceType, &amp;alloc.CycleDate, &amp;alloc.CreatedAt, &amp;alloc.TransactionID,
+                ); err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="1">allocs = append(allocs, alloc)</span>
+        }
+        <span class="cov8" title="1">if err := rows.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return allocs, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
