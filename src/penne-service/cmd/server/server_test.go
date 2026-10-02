@@ -180,6 +180,27 @@ func (d *dummyWishlistRepo) UpdateWishlistAllocation(alloc *core.WishlistAllocat
 }
 func (d *dummyWishlistRepo) DeleteWishlistAllocation(id uuid.UUID) error { return nil }
 
+type dummySubscriptionRepo struct{}
+
+func (d *dummySubscriptionRepo) CreateSubscription(sub *core.Subscription, tx *sql.Tx) (uuid.UUID, error) {
+	return validTokenUUID, nil
+}
+func (d *dummySubscriptionRepo) GetSubscriptionByID(id uuid.UUID) (*core.Subscription, error) {
+	return &core.Subscription{ID: id, Name: "Netflix", AmountE5: 64900000}, nil
+}
+func (d *dummySubscriptionRepo) GetSubscriptionsByUserUUID(userUUID uuid.UUID) ([]*core.Subscription, error) {
+	return []*core.Subscription{}, nil
+}
+func (d *dummySubscriptionRepo) GetDueSubscriptions(asOf time.Time, tx *sql.Tx) ([]*core.Subscription, error) {
+	return []*core.Subscription{}, nil
+}
+func (d *dummySubscriptionRepo) UpdateSubscription(sub *core.Subscription, tx *sql.Tx) error {
+	return nil
+}
+func (d *dummySubscriptionRepo) DeleteSubscription(id uuid.UUID) error {
+	return nil
+}
+
 func TestServer(t *testing.T) {
 	log := zap.NewNop()
 	tokenRepo := &dummyTokenRepo{}
@@ -195,6 +216,10 @@ func TestServer(t *testing.T) {
 		User:     &dummyUserRepo{},
 		Wishlist: &dummyWishlistRepo{},
 	}, log, mockDB, nil)
+	subscriptionHandler := handlers.NewSubscriptionServiceHandler(core.RepoContainer{
+		User:         &dummyUserRepo{},
+		Subscription: &dummySubscriptionRepo{},
+	}, log, mockDB, nil)
 
 	t.Run("NewMux", func(t *testing.T) {
 		m := NewMux()
@@ -204,15 +229,15 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("NewApplication", func(t *testing.T) {
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, tokenRepo, authHandler, shortcutIntentRepo)
-		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.wishlistHandler != wishlistHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler || app.shortcutIntentRepo != shortcutIntentRepo {
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, subscriptionHandler, tokenRepo, authHandler, shortcutIntentRepo)
+		if app == nil || app.userHandler != userHandler || app.transactionHandler != txnHandler || app.budgetingHandler != budgetingHandler || app.wishlistHandler != wishlistHandler || app.subscriptionHandler != subscriptionHandler || app.tokenRepo != tokenRepo || app.authHandler != authHandler || app.shortcutIntentRepo != shortcutIntentRepo {
 			t.Fatal("expected application initialized with handlers and tokenRepo")
 		}
 	})
 
 	t.Run("RegisterRoutes & Health Check", func(t *testing.T) {
 		router := NewMux()
-		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, tokenRepo, authHandler, shortcutIntentRepo)
+		app := NewApplication(txnHandler, userHandler, budgetingHandler, wishlistHandler, subscriptionHandler, tokenRepo, authHandler, shortcutIntentRepo)
 		RegisterRoutes(router, log, app)
 
 		req := httptest.NewRequest("GET", "/health", nil)

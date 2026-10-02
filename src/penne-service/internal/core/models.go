@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -173,6 +174,7 @@ type RepoContainer struct {
 	Allocation     AllocationRepository
 	ShortcutIntent ShortcutIntentRepository
 	Wishlist       WishlistRepository
+	Subscription   SubscriptionRepository
 }
 
 type DashboardSummary struct {
@@ -206,4 +208,170 @@ type UpdateTransactionCategoryRequest struct {
 	TxnType       string     `json:"txn_type,omitempty"`
 	PaymentMethod string     `json:"payment_method,omitempty"`
 }
+
+const (
+	BillingCycleWeekly    = "weekly"
+	BillingCycleMonthly   = "monthly"
+	BillingCycleQuarterly = "quarterly"
+	BillingCycleYearly    = "yearly"
+
+	SubscriptionStatusActive    = "active"
+	SubscriptionStatusPaused    = "paused"
+	SubscriptionStatusCancelled = "cancelled"
+)
+
+type Subscription struct {
+	ID                uuid.UUID  `json:"id" db:"id"`
+	UserUUID          uuid.UUID  `json:"user_uuid" db:"user_uuid"`
+	EnvelopeID        *uuid.UUID `json:"envelope_id,omitempty" db:"envelope_id"`
+	Name              string     `json:"name" db:"name"`
+	AmountE5          int64      `json:"amount_e5" db:"amount_e5"`
+	BillingCycle      string     `json:"billing_cycle" db:"billing_cycle"`
+	NextBillingDate   time.Time  `json:"next_billing_date" db:"next_billing_date"`
+	PaymentMethod     string     `json:"payment_method" db:"payment_method"`
+	Status            string     `json:"status" db:"status"`
+	AutoRenew         bool       `json:"auto_renew" db:"auto_renew"`
+	Notes             string     `json:"notes,omitempty" db:"notes"`
+	LastChargedAt     *time.Time `json:"last_charged_at,omitempty" db:"last_charged_at"`
+	LastTransactionID *uuid.UUID `json:"last_transaction_id,omitempty" db:"last_transaction_id"`
+	MerchantPattern   string     `json:"merchant_pattern,omitempty" db:"merchant_pattern"`
+	ChargeWindowHours int        `json:"charge_window_hours" db:"charge_window_hours"`
+	OccurrenceCount   int        `json:"occurrence_count" db:"occurrence_count"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at"`
+}
+
+type SubscriptionSummary struct {
+	TotalMonthlyCommitmentE5 int64           `json:"total_monthly_commitment_e5"`
+	ActiveCount              int             `json:"active_count"`
+	PausedCount              int             `json:"paused_count"`
+	NextUpcoming             *Subscription   `json:"next_upcoming,omitempty"`
+	Subscriptions            []*Subscription `json:"subscriptions"`
+}
+
+type SubscriptionRepository interface {
+	CreateSubscription(sub *Subscription, tx *sql.Tx) (uuid.UUID, error)
+	GetSubscriptionByID(id uuid.UUID) (*Subscription, error)
+	GetSubscriptionsByUserUUID(userUUID uuid.UUID) ([]*Subscription, error)
+	GetDueSubscriptions(asOf time.Time, tx *sql.Tx) ([]*Subscription, error)
+	UpdateSubscription(sub *Subscription, tx *sql.Tx) error
+	DeleteSubscription(id uuid.UUID) error
+}
+
+func CalculateMonthlyEquivalentE5(amountE5 int64, cycle string) int64 {
+	switch cycle {
+	case BillingCycleWeekly:
+		return amountE5 * 52 / 12
+	case BillingCycleQuarterly:
+		return amountE5 / 3
+	case BillingCycleYearly:
+		return amountE5 / 12
+	case BillingCycleMonthly:
+		fallthrough
+	default:
+		return amountE5
+	}
+}
+
+func AdvanceBillingDate(current time.Time, cycle string) time.Time {
+	switch cycle {
+	case BillingCycleWeekly:
+		return current.AddDate(0, 0, 7)
+	case BillingCycleQuarterly:
+		return current.AddDate(0, 3, 0)
+	case BillingCycleYearly:
+		return current.AddDate(1, 0, 0)
+	case BillingCycleMonthly:
+		fallthrough
+	default:
+		return current.AddDate(0, 1, 0)
+	}
+}
+
+func (s *Subscription) GetExpectedChargeTime() time.Time {
+	if s.LastChargedAt == nil || s.OccurrenceCount == 0 {
+		return s.NextBillingDate
+	}
+	y, m, d := s.NextBillingDate.Date()
+	h, min, sec := s.LastChargedAt.Clock()
+	return time.Date(y, m, d, h, min, sec, 0, time.UTC)
+}
+
+func (s *Subscription) MatchesTransaction(txn *Transaction) bool {
+	if s == nil || txn == nil {
+		return false
+	}
+	if s.Status != SubscriptionStatusActive {
+		return false
+	}
+	if txn.Type != TxnTypeDebit {
+		return false
+	}
+
+	// 1. Amount match (exact or within 10% tolerance for forex/taxes)
+	diff := s.AmountE5 - txn.AmountE5
+	if diff < 0 {
+		diff = -diff
+	}
+	if s.AmountE5 > 0 && diff > (s.AmountE5/10) {
+		return false
+	}
+
+	// 2. Merchant / Text match
+	desc := strings.ToLower(txn.Description)
+	name := strings.ToLower(s.Name)
+	textMatched := strings.Contains(desc, name) || strings.Contains(name, desc)
+	if !textMatched && s.MerchantPattern != "" {
+		pattern := strings.ToLower(s.MerchantPattern)
+		textMatched = strings.Contains(desc, pattern) || strings.Contains(pattern, desc)
+	}
+	if !textMatched {
+		return false
+	}
+
+	// 3. Time window check
+	windowHours := s.ChargeWindowHours
+	if windowHours <= 0 {
+		windowHours = 48
+	}
+	window := time.Duration(windowHours) * time.Hour
+	expectedTime := s.GetExpectedChargeTime()
+
+	txnTime := txn.CreatedAt
+	if txnTime.IsZero() {
+		return true
+	}
+
+	timeDiff := txnTime.Sub(expectedTime)
+	if timeDiff < 0 {
+		timeDiff = -timeDiff
+	}
+
+	return timeDiff <= window
+}
+
+func (s *Subscription) RecordCharge(txnID uuid.UUID, chargedAt time.Time, rawDescription string, amountE5 int64) {
+	s.LastChargedAt = &chargedAt
+	s.LastTransactionID = &txnID
+	s.OccurrenceCount++
+
+	if s.OccurrenceCount == 1 {
+		s.ChargeWindowHours = 24
+	} else if s.OccurrenceCount >= 2 {
+		s.ChargeWindowHours = 12
+	}
+
+	if s.MerchantPattern == "" && rawDescription != "" {
+		s.MerchantPattern = strings.TrimSpace(rawDescription)
+	}
+
+	if amountE5 > 0 {
+		s.AmountE5 = amountE5
+	}
+
+	s.NextBillingDate = AdvanceBillingDate(s.NextBillingDate, s.BillingCycle)
+	s.UpdatedAt = chargedAt
+}
+
+
 

@@ -429,6 +429,23 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		}
 		h.logger.Info("no pending shortcuts found for transaction")
 	}
+
+	var matchedSub *core.Subscription
+	if h.repos.Subscription != nil && txn.Type == core.TxnTypeDebit {
+		subs, err := h.repos.Subscription.GetSubscriptionsByUserUUID(userUUID)
+		if err == nil {
+			for _, sub := range subs {
+				if sub.MatchesTransaction(txn) {
+					matchedSub = sub
+					if txn.EnvelopeID == nil {
+						txn.EnvelopeID = sub.EnvelopeID
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if pendingShortcutIntent != nil {
 		txn.ShortcutIntentID = &pendingShortcutIntent.ID
 		txn.EnvelopeID = pendingShortcutIntent.EnvelopeID
@@ -436,6 +453,10 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		if err != nil {
 			h.logger.Error("Failed to create transaction workflow", zap.Error(err))
 			return nil, err
+		}
+		if matchedSub != nil && h.repos.Subscription != nil {
+			matchedSub.RecordCharge(txnID, txn.CreatedAt, txn.Description, txn.AmountE5)
+			_ = h.repos.Subscription.UpdateSubscription(matchedSub, Tx)
 		}
 		pendingShortcutIntent.TransactionID = &txnID
 		pendingShortcutIntent.Status = core.StatusSettled
@@ -472,6 +493,10 @@ func (h *TransactionServiceHandler) CreateTransactionWorkflow(txn *core.Transact
 		if err != nil {
 			h.logger.Error("Failed to create transaction and workflow", zap.Error(err))
 			return nil, err
+		}
+		if matchedSub != nil && h.repos.Subscription != nil {
+			matchedSub.RecordCharge(txnID, txn.CreatedAt, txn.Description, txn.AmountE5)
+			_ = h.repos.Subscription.UpdateSubscription(matchedSub, Tx)
 		}
 		if txn.EnvelopeID != nil && txn.Type == "debit" && h.repos.Allocation != nil {
 			_ = h.repos.Allocation.UpdateSpentAmount(*txn.EnvelopeID, txn.CreatedAt, txn.AmountE5, Tx)

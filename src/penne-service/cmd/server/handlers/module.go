@@ -9,4 +9,5 @@ var Module = fx.Module(
 	fx.Provide(NewBudgetingServiceHandler),
 	fx.Provide(NewAuthServiceHandler),
 	fx.Provide(NewWishlistServiceHandler),
+	fx.Provide(NewSubscriptionServiceHandler),
 )

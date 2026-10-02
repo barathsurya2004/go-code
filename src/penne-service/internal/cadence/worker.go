@@ -26,6 +26,7 @@ func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger
 	userAct := activities.NewUserActivities(repos, logger)
 	wishlistAct := activities.NewWishlistActivities(repos, db, logger)
 	emailAct := activities.NewEmailActivities(logger)
+	subscriptionAct := activities.NewSubscriptionActivities(repos, logger)
 	registerActivitiesOnce.Do(func() {
 		activity.RegisterWithOptions(activities.HelloWorldActivity, activity.RegisterOptions{Name: "HelloWorldActivity"})
 		activity.RegisterWithOptions(transactionAct.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
@@ -48,6 +49,13 @@ func RegisterActivities(repos core.RepoContainer, db *sql.DB, logger *zap.Logger
 		activity.RegisterWithOptions(wishlistAct.CalculateWishlistForecastActivity, activity.RegisterOptions{Name: "CalculateWishlistForecastActivity"})
 		activity.RegisterWithOptions(wishlistAct.ApplyWishlistSurplusActivity, activity.RegisterOptions{Name: "ApplyWishlistSurplusActivity"})
 
+		activity.RegisterWithOptions(subscriptionAct.CreateSubscriptionActivity, activity.RegisterOptions{Name: "CreateSubscriptionActivity"})
+		activity.RegisterWithOptions(subscriptionAct.GetSubscriptionByIDActivity, activity.RegisterOptions{Name: "GetSubscriptionByIDActivity"})
+		activity.RegisterWithOptions(subscriptionAct.RenewSubscriptionActivity, activity.RegisterOptions{Name: "RenewSubscriptionActivity"})
+		activity.RegisterWithOptions(subscriptionAct.GetDueSubscriptionsActivity, activity.RegisterOptions{Name: "GetDueSubscriptionsActivity"})
+		activity.RegisterWithOptions(subscriptionAct.MatchSubscriptionIntentActivity, activity.RegisterOptions{Name: "MatchSubscriptionIntentActivity"})
+		activity.RegisterWithOptions(subscriptionAct.RecordSubscriptionChargeActivity, activity.RegisterOptions{Name: "RecordSubscriptionChargeActivity"})
+
 		activity.RegisterWithOptions(emailAct.ParseEmailActivity, activity.RegisterOptions{Name: "ParseEmailActivity"})
 	})
 }
@@ -61,6 +69,9 @@ func RegisterWorkflows() {
 		workflow.RegisterWithOptions(workflows.SettleWishlistWorkflow, workflow.RegisterOptions{Name: "SettleWishlistWorkflow"})
 		workflow.RegisterWithOptions(workflows.ProcessEmailWorkflow, workflow.RegisterOptions{Name: "ProcessEmailWorkflow"})
 		workflow.RegisterWithOptions(workflows.UpdateTransactionCategoryWorkflow, workflow.RegisterOptions{Name: "UpdateTransactionCategoryWorkflow"})
+		workflow.RegisterWithOptions(workflows.CreateSubscriptionWorkflow, workflow.RegisterOptions{Name: "CreateSubscriptionWorkflow"})
+		workflow.RegisterWithOptions(workflows.RenewSubscriptionWorkflow, workflow.RegisterOptions{Name: "RenewSubscriptionWorkflow"})
+		workflow.RegisterWithOptions(workflows.ScanAndRenewDueSubscriptionsWorkflow, workflow.RegisterOptions{Name: "ScanAndRenewDueSubscriptionsWorkflow"})
 	})
 
 }

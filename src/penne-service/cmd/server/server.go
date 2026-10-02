@@ -20,13 +20,14 @@ func NewMux() *mux.Router {
 }
 
 type Application struct {
-	transactionHandler *handlers.TransactionServiceHandler
-	userHandler        *handlers.UserServiceHandler
-	budgetingHandler   *handlers.BudgetingServiceHandler
-	wishlistHandler    *handlers.WishlistServiceHandler
-	tokenRepo          core.TokenRepository
-	authHandler        *handlers.AuthServiceHandler
-	shortcutIntentRepo core.ShortcutIntentRepository
+	transactionHandler  *handlers.TransactionServiceHandler
+	userHandler         *handlers.UserServiceHandler
+	budgetingHandler    *handlers.BudgetingServiceHandler
+	wishlistHandler     *handlers.WishlistServiceHandler
+	subscriptionHandler *handlers.SubscriptionServiceHandler
+	tokenRepo           core.TokenRepository
+	authHandler         *handlers.AuthServiceHandler
+	shortcutIntentRepo  core.ShortcutIntentRepository
 }
 
 func NewApplication(
@@ -34,18 +35,20 @@ func NewApplication(
 	userHandler *handlers.UserServiceHandler,
 	budgetingHandler *handlers.BudgetingServiceHandler,
 	wishlistHandler *handlers.WishlistServiceHandler,
+	subscriptionHandler *handlers.SubscriptionServiceHandler,
 	tokenRepo core.TokenRepository,
 	authHandler *handlers.AuthServiceHandler,
 	shortcutIntentRepo core.ShortcutIntentRepository,
 ) *Application {
 	return &Application{
-		transactionHandler: transactionHandler,
-		userHandler:        userHandler,
-		budgetingHandler:   budgetingHandler,
-		wishlistHandler:    wishlistHandler,
-		tokenRepo:          tokenRepo,
-		authHandler:        authHandler,
-		shortcutIntentRepo: shortcutIntentRepo,
+		transactionHandler:  transactionHandler,
+		userHandler:         userHandler,
+		budgetingHandler:    budgetingHandler,
+		wishlistHandler:     wishlistHandler,
+		subscriptionHandler: subscriptionHandler,
+		tokenRepo:           tokenRepo,
+		authHandler:         authHandler,
+		shortcutIntentRepo:  shortcutIntentRepo,
 	}
 }
 
@@ -109,6 +112,15 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/wishlist/forecast", app.wishlistHandler.GetForecast).Methods("GET")
 	mux.HandleFunc("/wishlist/distribute", app.wishlistHandler.DistributeSurplus).Methods("POST")
 	mux.HandleFunc("/wishlist/allocate", app.wishlistHandler.ManualAllocate).Methods("POST")
+
+	// subscription endpoints
+	mux.HandleFunc("/subscription", app.subscriptionHandler.CreateSubscription).Methods("POST")
+	mux.HandleFunc("/subscriptions", app.subscriptionHandler.GetSubscriptions).Methods("GET")
+	mux.HandleFunc("/subscription", app.subscriptionHandler.GetSubscriptionByID).Methods("GET")
+	mux.HandleFunc("/subscription", app.subscriptionHandler.UpdateSubscription).Methods("PUT")
+	mux.HandleFunc("/subscription", app.subscriptionHandler.DeleteSubscription).Methods("DELETE")
+	mux.HandleFunc("/subscription/renew", app.subscriptionHandler.RenewSubscription).Methods("POST")
+	mux.HandleFunc("/subscriptions/scan-due", app.subscriptionHandler.ScanDueSubscriptions).Methods("POST")
 
 	// apis
 	mux.HandleFunc("/api/get-active-categories", app.budgetingHandler.GetActiveCategoriesByUserUUID).Methods("GET")

@@ -144,3 +144,52 @@ func (s *UnitTestSuite) Test_CreateTransactionWorkflow_NonZeroCreatedAt() {
 	s.Equal(expectedTxnID, *result)
 }
 
+func (s *UnitTestSuite) Test_CreateTransactionWorkflow_MatchedSubscriptionIntent_Success() {
+	env := s.NewTestWorkflowEnvironment()
+	logger := zap.NewNop()
+
+	subActs := activities.NewSubscriptionActivities(core.RepoContainer{}, logger)
+	txnActs := activities.NewTransactionActivities(core.RepoContainer{}, logger)
+
+	env.RegisterActivityWithOptions(txnActs.PendingShortcutIntentActivity, activity.RegisterOptions{Name: "PendingShortcutIntentActivity"})
+	env.RegisterActivityWithOptions(txnActs.CreateTransaction, activity.RegisterOptions{Name: "CreateTransactionActivity"})
+	env.RegisterActivityWithOptions(txnActs.UpdateAllocationSpentActivity, activity.RegisterOptions{Name: "UpdateAllocationSpentActivity"})
+	env.RegisterActivityWithOptions(subActs.MatchSubscriptionIntentActivity, activity.RegisterOptions{Name: "MatchSubscriptionIntentActivity"})
+	env.RegisterActivityWithOptions(subActs.RecordSubscriptionChargeActivity, activity.RegisterOptions{Name: "RecordSubscriptionChargeActivity"})
+
+	subID := uuid.New()
+	envID := uuid.New()
+	expectedTxnID := uuid.New()
+
+	matchedSub := &core.Subscription{
+		ID:         subID,
+		EnvelopeID: &envID,
+		Name:       "Netflix",
+		AmountE5:   64900000,
+	}
+
+	env.OnActivity("PendingShortcutIntentActivity", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return((*core.ShortcutIntent)(nil), nil)
+	env.OnActivity("CreateTransactionActivity", mock.Anything, mock.Anything).Return(&expectedTxnID, nil)
+	env.OnActivity("MatchSubscriptionIntentActivity", mock.Anything, mock.Anything).Return(matchedSub, nil)
+	env.OnActivity("UpdateAllocationSpentActivity", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity("RecordSubscriptionChargeActivity", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	txn := core.Transaction{
+		UserID:      uuid.New(),
+		Type:        core.TxnTypeDebit,
+		Description: "NETFLIX MUMBAI",
+		AmountE5:    64900000,
+		CreatedAt:   time.Now(),
+	}
+	env.ExecuteWorkflow(CreateTransactionWorkflow, txn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result *uuid.UUID
+	s.NoError(env.GetWorkflowResult(&result))
+	s.NotNil(result)
+	s.Equal(expectedTxnID, *result)
+}
+
+

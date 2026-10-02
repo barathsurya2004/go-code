@@ -69,6 +69,14 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 		}
 	}
 
+	var matchedSub *core.Subscription
+	if txn.Type == core.TxnTypeDebit {
+		_ = workflow.ExecuteActivity(ctx, "MatchSubscriptionIntentActivity", txn).Get(ctx, &matchedSub)
+		if matchedSub != nil && txn.EnvelopeID == nil {
+			txn.EnvelopeID = matchedSub.EnvelopeID
+		}
+	}
+
 	if txn.EnvelopeID != nil && txn.Type == "debit" {
 		_ = workflow.ExecuteActivity(
 			ctx,
@@ -88,6 +96,18 @@ func CreateTransactionWorkflow(ctx workflow.Context, txn core.Transaction) (*uui
 			txn.AmountE5,
 			txnID,
 			txn.CreatedAt,
+		).Get(ctx, nil)
+	}
+
+	if matchedSub != nil {
+		_ = workflow.ExecuteActivity(
+			ctx,
+			"RecordSubscriptionChargeActivity",
+			matchedSub.ID,
+			txnID,
+			txn.CreatedAt,
+			txn.Description,
+			txn.AmountE5,
 		).Get(ctx, nil)
 	}
 

@@ -1034,6 +1034,60 @@ func TestTransactionServiceHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateTransactionWorkflow - Success with Matched Subscription", func(t *testing.T) {
+		txnID := uuid.New()
+		subID := uuid.New()
+		envID := uuid.New()
+		now := time.Now()
+		subUpdated := false
+
+		localShortcutRepo := &mockShortcutIntentRepo{
+			getPendingRecentFn: func(userUUID uuid.UUID, Tx *sql.Tx, time_lowerbound, time_upperbound time.Time) (*core.ShortcutIntent, error) {
+				return nil, sql.ErrNoRows
+			},
+		}
+		localTxnRepo := &mockTxnRepo{
+			createTransactionFn: func(txn *core.Transaction) (uuid.UUID, error) {
+				return txnID, nil
+			},
+		}
+		mockSubRepo := &mockSubscriptionRepoInHandlers{
+			getByUser: func(u uuid.UUID) ([]*core.Subscription, error) {
+				return []*core.Subscription{
+					{
+						ID:                subID,
+						EnvelopeID:        &envID,
+						Name:              "Netflix",
+						AmountE5:          64900000,
+						Status:            core.SubscriptionStatusActive,
+						NextBillingDate:   now,
+						ChargeWindowHours: 48,
+					},
+				}, nil
+			},
+			updateFn: func(s *core.Subscription, tx *sql.Tx) error {
+				subUpdated = true
+				return nil
+			},
+		}
+
+		h := NewTransactionServiceHandler(localTxnRepo, localShortcutRepo, logger, nil, nil, core.RepoContainer{
+			Subscription: mockSubRepo,
+		})
+		res, err := h.CreateTransactionWorkflow(&core.Transaction{
+			Type:        core.TxnTypeDebit,
+			Description: "NETFLIX MUMBAI",
+			AmountE5:    64900000,
+			CreatedAt:   now,
+		}, validUUID, nil)
+		if err != nil || res == nil || *res != txnID {
+			t.Fatalf("expected txnID %v, got %v, err %v", txnID, res, err)
+		}
+		if !subUpdated {
+			t.Errorf("expected subscription to be updated")
+		}
+	})
+
 	t.Run("DashboardSummaryHandler - Missing User UUID", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/dashboard-summary", nil)
 		rr := httptest.NewRecorder()
