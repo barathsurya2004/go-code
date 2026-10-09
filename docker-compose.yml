@@ -31,7 +31,6 @@ services:
       - path: src/penne-service/.env
         required: false
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/penne_app?sslmode=disable}
       GRPC_ADDR: ":50051"
     depends_on:
       db:
@@ -48,8 +47,6 @@ services:
     env_file:
       - path: src/penne-service/.env
         required: false
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/penne_app?sslmode=disable}
     depends_on:
       db:
         condition: service_healthy

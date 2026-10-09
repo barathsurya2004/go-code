@@ -88,4 +88,18 @@ jobs:
           key: ${{ secrets.LAPTOP_SSH_KEY }}
           port: 22
           script: |
-            ~/Codes/deploy.sh all
+            # Detect repository folder (go-code or penne-server)
+            if [ -d "$HOME/Codes/go-code" ]; then
+              REPO_DIR="$HOME/Codes/go-code"
+            elif [ -d "$HOME/Codes/penne-server" ]; then
+              REPO_DIR="$HOME/Codes/penne-server"
+            else
+              echo "Error: Repository folder not found in ~/Codes"
+              exit 1
+            fi
+
+            cd "$REPO_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x scripts/deploy.sh
+            ./scripts/deploy.sh all
