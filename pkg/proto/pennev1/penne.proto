@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package penne.v1;
+
+option go_package = "github.com/barathsurya2004/go-code/pkg/proto/pennev1;pennev1";
+
+// Common status
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string service_name = 2;
+  int64 timestamp = 3;
+}
+
+// User messages
+message GetUserRequest {
+  string user_uuid = 1;
+}
+
+message UserResponse {
+  string uuid = 1;
+  string name = 2;
+  string email = 3;
+  double monthly_income = 4;
+}
+
+// Transaction messages
+message TransactionItem {
+  string id = 1;
+  string user_uuid = 2;
+  double amount = 3;
+  string category = 4;
+  string date = 5;
+  string remarks = 6;
+  string envelope_id = 7;
+}
+
+message CreateTransactionRequest {
+  string user_uuid = 1;
+  double amount = 2;
+  string category = 3;
+  string date = 4;
+  string remarks = 5;
+  string envelope_id = 6;
+}
+
+message GetTransactionRequest {
+  string transaction_uuid = 1;
+}
+
+message GetTransactionsByUserRequest {
+  string user_uuid = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message TransactionListResponse {
+  repeated TransactionItem transactions = 1;
+  int32 total_count = 2;
+}
+
+message UpdateTransactionRequest {
+  string id = 1;
+  string user_uuid = 2;
+  double amount = 3;
+  string category = 4;
+  string date = 5;
+  string remarks = 6;
+  string envelope_id = 7;
+}
+
+message DeleteTransactionRequest {
+  string transaction_uuid = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Envelope messages
+message EnvelopeItem {
+  string id = 1;
+  string name = 2;
+  double balance = 3;
+  double budget_limit = 4;
+  string user_uuid = 5;
+}
+
+message GetEnvelopeRequest {
+  string envelope_id = 1;
+}
+
+message GetEnvelopesByUserRequest {
+  string user_uuid = 1;
+}
+
+message EnvelopeListResponse {
+  repeated EnvelopeItem envelopes = 1;
+}
+
+// Service definition
+service PenneService {
+  rpc CheckHealth(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // User
+  rpc GetUser(GetUserRequest) returns (UserResponse);
+
+  // Transaction
+  rpc CreateTransaction(CreateTransactionRequest) returns (TransactionItem);
+  rpc GetTransaction(GetTransactionRequest) returns (TransactionItem);
+  rpc GetTransactionsByUser(GetTransactionsByUserRequest) returns (TransactionListResponse);
+  rpc UpdateTransaction(UpdateTransactionRequest) returns (TransactionItem);
+  rpc DeleteTransaction(DeleteTransactionRequest) returns (DeleteResponse);
+
+  // Budgeting & Envelopes
+  rpc GetEnvelope(GetEnvelopeRequest) returns (EnvelopeItem);
+  rpc GetEnvelopesByUser(GetEnvelopesByUserRequest) returns (EnvelopeListResponse);
+}

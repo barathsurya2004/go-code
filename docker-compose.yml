@@ -2,32 +2,73 @@ services:
   db:
     image: postgres:15-alpine
     container_name: penne_db
+    restart: unless-stopped
+    profiles: ["local"] # Only started for local database development
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: penne_app
     ports:
-      - "5432:5432" # Maps localhost:5432 to the container's 5432
+      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data # Persists your data even if the container stops
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d penne_app"]
       interval: 5s
       timeout: 6s
       retries: 5
+
   penne-service:
     build:
       context: .
-      dockerfile: src/penne-service/DockerFile
+      dockerfile: src/penne-service/Dockerfile
     container_name: penne_service
-    ports:
-      - "8080:8080" # Maps localhost:8080 to the container's 8080
+    restart: unless-stopped
+    expose:
+      - "50051" # Internal gRPC port
+      - "8080"  # Internal HTTP port
+    env_file:
+      - path: src/penne-service/.env
+        required: false
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/penne_app?sslmode=disable
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/penne_app?sslmode=disable}
+      GRPC_ADDR: ":50051"
     depends_on:
       db:
         condition: service_healthy
+        required: false
 
+  cadence-worker:
+    build:
+      context: .
+      dockerfile: src/penne-service/Dockerfile
+    container_name: penne_cadence_worker
+    restart: unless-stopped
+    command: ["./cadence-worker"]
+    env_file:
+      - path: src/penne-service/.env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/penne_app?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  gateway:
+    build:
+      context: .
+      dockerfile: src/gateway/Dockerfile
+    container_name: gateway
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080" # Single forwarded port
+    environment:
+      PORT: "8080"
+      PENNE_SERVICE_TARGET: "penne_service:50051"
+      PENNE_HTTP_TARGET: "http://penne_service:8080"
+    depends_on:
+      - penne-service
 
 volumes:
   pgdata:

@@ -29,6 +29,19 @@ jobs:
           cd pkg
           go test -v -coverprofile=coverage.out ./...
 
+      - name: Test gateway module
+        run: |
+          cd src/gateway
+          go test -v -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Verify gateway Coverage > 95%
+        run: |
+          cd src/gateway
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Gateway coverage is ${COVERAGE}%"
+          awk -v cov="$COVERAGE" 'BEGIN { if (cov < 95.0) { print "Coverage below 95%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
+
       - name: Test penne-service module
         run: |
           cd src/penne-service
@@ -39,7 +52,7 @@ jobs:
         run: |
           cd src/penne-service
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "Coverage is ${COVERAGE}%"
+          echo "Penne-service coverage is ${COVERAGE}%"
           awk -v cov="$COVERAGE" 'BEGIN { if (cov < 95.0) { print "Coverage below 95%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
 
       - name: Upload Coverage Artifacts
@@ -48,6 +61,7 @@ jobs:
           name: coverage-report
           path: |
             pkg/coverage.out
+            src/gateway/coverage.out
             src/penne-service/coverage.out
 
   deploy:
@@ -65,7 +79,7 @@ jobs:
           authkey: ${{ secrets.TS_AUTHKEY }}
           tags: tag:ci
 
-      # 2. Securely SSH into the tablet and execute the deployment script
+      # 2. Securely SSH into the server and execute the Docker deployment script
       - name: Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -74,5 +88,4 @@ jobs:
           key: ${{ secrets.LAPTOP_SSH_KEY }}
           port: 22
           script: |
-            ~/Codes/deploy.sh penne-service
-            ~/Codes/deploy.sh cadence-penne-service
+            ~/Codes/deploy.sh all

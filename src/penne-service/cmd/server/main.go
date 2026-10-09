@@ -6,6 +6,7 @@ import (
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/cadence"
 	"github.com/barathsurya2004/go-code/penne-service/internal/db"
+	"github.com/barathsurya2004/go-code/penne-service/internal/grpcserver"
 	"github.com/barathsurya2004/go-code/pkg"
 	"go.uber.org/fx"
 )
@@ -16,6 +17,7 @@ func buildApp(opts ...fx.Option) *fx.App {
 		db.Module,
 		cadence.Module,
 		handlers.Module,
+		grpcserver.Module,
 		fx.Provide(
 			NewApplication,
 			NewMux,
