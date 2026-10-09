@@ -123,23 +123,32 @@ func TestCORSMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// Preflight OPTIONS
+	// Preflight OPTIONS with custom requested headers & Origin
 	reqOpt := httptest.NewRequest(http.MethodOptions, "/test", nil)
+	reqOpt.Header.Set("Origin", "http://localhost:5173")
+	reqOpt.Header.Set("Access-Control-Request-Headers", "authorization, ngrok-skip-browser-warning, cache-control")
 	recOpt := httptest.NewRecorder()
 	handler.ServeHTTP(recOpt, reqOpt)
 	if recOpt.Code != http.StatusNoContent {
 		t.Errorf("expected 204 for OPTIONS, got %d", recOpt.Code)
 	}
+	if recOpt.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Errorf("expected reflected origin, got %s", recOpt.Header().Get("Access-Control-Allow-Origin"))
+	}
+	if recOpt.Header().Get("Access-Control-Allow-Headers") != "authorization, ngrok-skip-browser-warning, cache-control" {
+		t.Errorf("expected reflected headers")
+	}
 
-	// Normal request
+	// Normal request with Origin
 	reqGet := httptest.NewRequest(http.MethodGet, "/test", nil)
+	reqGet.Header.Set("Origin", "http://localhost:5173")
 	recGet := httptest.NewRecorder()
 	handler.ServeHTTP(recGet, reqGet)
 	if recGet.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", recGet.Code)
 	}
-	if recGet.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Errorf("expected * CORS header")
+	if recGet.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Errorf("expected http://localhost:5173 CORS header")
 	}
 }
 

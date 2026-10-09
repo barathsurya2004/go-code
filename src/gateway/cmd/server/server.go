@@ -49,11 +49,23 @@ func (m *ProtocolMultiplexer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-user-uuid, x-request-id")
+		origin := r.Header.Get("Origin")
+		allowOrigin := "*"
+		if origin != "" {
+			allowOrigin = origin
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-user-uuid, x-request-id, ngrok-skip-browser-warning, X-Requested-With, Accept, Origin, Cache-Control, Pragma")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin")
 
 		if r.Method == http.MethodOptions {
+			reqHeaders := r.Header.Get("Access-Control-Request-Headers")
+			if reqHeaders != "" {
+				w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -300,6 +312,13 @@ func NewRouter(handler *GatewayHandler, cfg *Config) *mux.Router {
 		targetURL, err := url.Parse(cfg.PenneHTTPTarget)
 		if err == nil && targetURL.Host != "" {
 			proxy := httputil.NewSingleHostReverseProxy(targetURL)
+			proxy.ModifyResponse = func(resp *http.Response) error {
+				resp.Header.Del("Access-Control-Allow-Origin")
+				resp.Header.Del("Access-Control-Allow-Methods")
+				resp.Header.Del("Access-Control-Allow-Headers")
+				resp.Header.Del("Access-Control-Allow-Credentials")
+				return nil
+			}
 			r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				proxy.ServeHTTP(w, req)
 			})
