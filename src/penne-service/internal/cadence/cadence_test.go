@@ -26,6 +26,18 @@ func TestCadenceConfig(t *testing.T) {
 	if cfg.HostPort != CadenceHostPort {
 		t.Errorf("expected host port %s, got %s", CadenceHostPort, cfg.HostPort)
 	}
+
+	t.Setenv("CADENCE_ADDR", "custom:7933")
+	cfgAddr := NewCadenceConfig()
+	if cfgAddr.HostPort != "custom:7933" {
+		t.Errorf("expected custom:7933, got %s", cfgAddr.HostPort)
+	}
+
+	t.Setenv("CADENCE_HOST_PORT", "override:7933")
+	cfgHostPort := NewCadenceConfig()
+	if cfgHostPort.HostPort != "override:7933" {
+		t.Errorf("expected override:7933, got %s", cfgHostPort.HostPort)
+	}
 }
 
 func TestNewCadenceClient(t *testing.T) {

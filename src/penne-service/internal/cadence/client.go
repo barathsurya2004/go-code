@@ -2,6 +2,7 @@ package cadence
 
 import (
 	"context"
+	"os"
 
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/client"
@@ -32,11 +33,19 @@ type CadenceConfig struct {
 
 // NewCadenceConfig provides default configuration.
 func NewCadenceConfig() *CadenceConfig {
+	hostPort := os.Getenv("CADENCE_HOST_PORT")
+	if hostPort == "" {
+		hostPort = os.Getenv("CADENCE_ADDR")
+	}
+	if hostPort == "" {
+		hostPort = CadenceHostPort
+	}
+
 	return &CadenceConfig{
 		Domain:         Domain,
 		ServiceName:    ClientServiceName,
 		CadenceService: CadenceService,
-		HostPort:       CadenceHostPort,
+		HostPort:       hostPort,
 	}
 }
 
