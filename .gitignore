@@ -38,3 +38,6 @@ temp/
 *.sqlite3
 *.db
 *.dump
+
+# Local runtime data
+data/

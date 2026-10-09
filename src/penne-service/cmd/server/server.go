@@ -8,8 +8,10 @@ import (
 
 	"github.com/barathsurya2004/go-code/penne-service/cmd/server/handlers"
 	"github.com/barathsurya2004/go-code/penne-service/internal/core"
+	"github.com/barathsurya2004/go-code/penne-service/internal/observability"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -131,6 +133,11 @@ func RegisterRoutes(mux *mux.Router, log *zap.Logger, app *Application) {
 	mux.HandleFunc("/dashboard-summary", app.transactionHandler.DashboardSummaryHandler).Methods("GET")
 	mux.HandleFunc("/api/insights/monthly", app.transactionHandler.MonthlyInsightsHandler).Methods("GET")
 	mux.HandleFunc("/insights/monthly", app.transactionHandler.MonthlyInsightsHandler).Methods("GET")
+
+	// Prometheus metrics endpoint (unauthenticated)
+	mux.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
+	mux.Use(observability.MetricsMiddleware())
 	mux.Use(CORSMiddleware)
 	mux.Use(AuthMiddleware(app.tokenRepo))
 }
@@ -159,7 +166,7 @@ func NewHTTPServer(lc fx.Lifecycle, mux *mux.Router, log *zap.Logger) *http.Serv
 func AuthMiddleware(Tokenrepo core.TokenRepository) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodOptions || r.URL.Path == "/health" || (r.URL.Path == "/user" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/signup" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/login" && r.Method == http.MethodPost) {
+			if r.Method == http.MethodOptions || r.URL.Path == "/health" || r.URL.Path == "/metrics" || (r.URL.Path == "/user" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/signup" && r.Method == http.MethodPost) || (r.URL.Path == "/auth/login" && r.Method == http.MethodPost) {
 				next.ServeHTTP(w, r)
 				return
 			}

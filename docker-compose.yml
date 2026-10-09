@@ -35,6 +35,9 @@ services:
     environment:
       GRPC_ADDR: ":50051"
       CADENCE_HOST_PORT: "${CADENCE_HOST_PORT:-host.docker.internal:7933}"
+      UPTIME_STATE_FILE: "/root/data/uptime_state.json"
+    volumes:
+      - ./data:/root/data
     depends_on:
       db:
         condition: service_healthy
