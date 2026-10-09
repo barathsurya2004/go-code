@@ -513,13 +513,30 @@ func (h *BudgetingServiceHandler) GetActiveCategoriesByUserUUID(w http.ResponseW
 		AllocationID    uuid.UUID    `json:"allocation_id,omitempty"`
 	}
 
-	budgetCategories := make([]budgetCategory, 0)
+	budgetCategories := make([]budgetCategory, 0, len(allocations))
+	var envMap map[uuid.UUID]*core.Envelope
+	if userEnvs, err := h.envelopeRepo.GetEnvelopesByUserUUID(userUUID); err == nil && len(userEnvs) > 0 {
+		envMap = make(map[uuid.UUID]*core.Envelope, len(userEnvs))
+		for _, e := range userEnvs {
+			if e != nil {
+				envMap[e.ID] = e
+			}
+		}
+	}
+
 	for _, allocation := range allocations {
-		env, err := h.envelopeRepo.GetEnvelopeByID(allocation.EnvelopeID)
-		if err != nil {
-			h.logger.Error("Failed to get envelope", zap.String("envelope_id", allocation.EnvelopeID.String()), zap.Error(err))
-			http.Error(w, "Failed to get envelope", http.StatusInternalServerError)
-			return
+		var env *core.Envelope
+		if envMap != nil {
+			env = envMap[allocation.EnvelopeID]
+		}
+		if env == nil {
+			var err error
+			env, err = h.envelopeRepo.GetEnvelopeByID(allocation.EnvelopeID)
+			if err != nil {
+				h.logger.Error("Failed to get envelope", zap.String("envelope_id", allocation.EnvelopeID.String()), zap.Error(err))
+				http.Error(w, "Failed to get envelope", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		budgetCategories = append(budgetCategories, budgetCategory{

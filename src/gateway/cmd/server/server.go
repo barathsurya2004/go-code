@@ -66,6 +66,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 			if reqHeaders != "" {
 				w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
 			}
+			w.Header().Set("Access-Control-Max-Age", "86400")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
