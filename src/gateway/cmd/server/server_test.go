@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -346,6 +347,35 @@ func TestTransactionHandlers(t *testing.T) {
 		t.Errorf("expected 200, got %d", recL.Code)
 	}
 
+	// Get list with invalid and negative limit (falls back to default)
+	reqLInv := httptest.NewRequest(http.MethodGet, "/api/v1/transactions?user_id=u-1&limit=abc", nil)
+	recLInv := httptest.NewRecorder()
+	router.ServeHTTP(recLInv, reqLInv)
+	if recLInv.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recLInv.Code)
+	}
+
+	reqLNeg := httptest.NewRequest(http.MethodGet, "/api/v1/transactions?user_id=u-1&limit=-5", nil)
+	recLNeg := httptest.NewRecorder()
+	router.ServeHTTP(recLNeg, reqLNeg)
+	if recLNeg.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recLNeg.Code)
+	}
+
+	// Get list downstream gRPC error
+	clientTxErr := &mockPenneServiceClient{
+		getTransactionsByUserFn: func(ctx context.Context, in *pennev1.GetTransactionsByUserRequest, opts ...grpc.CallOption) (*pennev1.TransactionListResponse, error) {
+			return nil, status.Error(codes.Internal, "db failure")
+		},
+	}
+	routerTxErr := NewRouter(NewGatewayHandler(clientTxErr, zap.NewNop()), &Config{})
+	reqLTxErr := httptest.NewRequest(http.MethodGet, "/api/v1/transactions?user_id=u-1", nil)
+	recLTxErr := httptest.NewRecorder()
+	routerTxErr.ServeHTTP(recLTxErr, reqLTxErr)
+	if recLTxErr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recLTxErr.Code)
+	}
+
 	// Update success
 	bodyUp := map[string]interface{}{"id": "t-1", "user_uuid": "u-1", "amount": 20.0}
 	rawUp, _ := json.Marshal(bodyUp)
@@ -645,7 +675,85 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Fatalf("expected 202, got %d: %s", recImg.Code, recImg.Body.String())
 	}
 
-	// 2. Upload with invalid content type
+	// 2. Upload with multipart form data using 'image' field
+	mpBody := &bytes.Buffer{}
+	writer := multipart.NewWriter(mpBody)
+	part, _ := writer.CreateFormFile("image", "meal.jpg")
+	part.Write([]byte("fake-jpeg-bytes"))
+	writer.WriteField("meal_type", "lunch")
+	writer.WriteField("notes", "healthy meal")
+	writer.Close()
+
+	reqMP := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", mpBody)
+	reqMP.Header.Set("Content-Type", writer.FormDataContentType())
+	recMP := httptest.NewRecorder()
+	router.ServeHTTP(recMP, reqMP)
+	if recMP.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for multipart 'image', got %d: %s", recMP.Code, recMP.Body.String())
+	}
+
+	// 3. Upload with multipart form data using 'file' field fallback
+	mpBodyF := &bytes.Buffer{}
+	writerF := multipart.NewWriter(mpBodyF)
+	partF, _ := writerF.CreateFormFile("file", "meal.png")
+	partF.Write([]byte("fake-png-bytes"))
+	writerF.Close()
+
+	reqMPF := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", mpBodyF)
+	reqMPF.Header.Set("Content-Type", writerF.FormDataContentType())
+	recMPF := httptest.NewRecorder()
+	router.ServeHTTP(recMPF, reqMPF)
+	if recMPF.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for multipart 'file', got %d: %s", recMPF.Code, recMPF.Body.String())
+	}
+
+	// 4. Upload with multipart form missing both 'image' and 'file'
+	mpBodyMissing := &bytes.Buffer{}
+	writerMissing := multipart.NewWriter(mpBodyMissing)
+	writerMissing.WriteField("notes", "missing file")
+	writerMissing.Close()
+
+	reqMPMissing := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", mpBodyMissing)
+	reqMPMissing.Header.Set("Content-Type", writerMissing.FormDataContentType())
+	recMPMissing := httptest.NewRecorder()
+	router.ServeHTTP(recMPMissing, reqMPMissing)
+	if recMPMissing.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing file field, got %d", recMPMissing.Code)
+	}
+
+	// 5. Upload with multipart form containing empty file data
+	mpBodyEmpty := &bytes.Buffer{}
+	writerEmpty := multipart.NewWriter(mpBodyEmpty)
+	_, _ = writerEmpty.CreateFormFile("image", "empty.jpg")
+	writerEmpty.Close()
+
+	reqMPEmpty := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", mpBodyEmpty)
+	reqMPEmpty.Header.Set("Content-Type", writerEmpty.FormDataContentType())
+	recMPEmpty := httptest.NewRecorder()
+	router.ServeHTTP(recMPEmpty, reqMPEmpty)
+	if recMPEmpty.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty multipart file data, got %d", recMPEmpty.Code)
+	}
+
+	// 6. Upload with malformed multipart boundary
+	reqBadMP := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("not valid body")))
+	reqBadMP.Header.Set("Content-Type", "multipart/form-data; boundary=invalid")
+	recBadMP := httptest.NewRecorder()
+	router.ServeHTTP(recBadMP, reqBadMP)
+	if recBadMP.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for malformed multipart, got %d", recBadMP.Code)
+	}
+
+	// 7. Upload with empty image/png body
+	reqEmptyDirect := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("")))
+	reqEmptyDirect.Header.Set("Content-Type", "image/png")
+	recEmptyDirect := httptest.NewRecorder()
+	router.ServeHTTP(recEmptyDirect, reqEmptyDirect)
+	if recEmptyDirect.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty image binary, got %d", recEmptyDirect.Code)
+	}
+
+	// 8. Upload with invalid content type
 	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("text")))
 	reqBad.Header.Set("Content-Type", "text/plain")
 	recBad := httptest.NewRecorder()
@@ -654,7 +762,7 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Errorf("expected 400, got %d", recBad.Code)
 	}
 
-	// 3. Get job status
+	// 9. Get job status
 	reqJob := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/jobs/job-1", nil)
 	recJob := httptest.NewRecorder()
 	router.ServeHTTP(recJob, reqJob)
@@ -662,7 +770,7 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Errorf("expected 200, got %d", recJob.Code)
 	}
 
-	// 4. Get daily nutrition
+	// 10. Get daily nutrition
 	reqDaily := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/daily?date=2026-10-13", nil)
 	recDaily := httptest.NewRecorder()
 	router.ServeHTTP(recDaily, reqDaily)
@@ -670,7 +778,7 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Errorf("expected 200, got %d", recDaily.Code)
 	}
 
-	// 5. Goals GET and POST
+	// 11. Goals GET and POST
 	reqGetGoals := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/goals", nil)
 	recGetGoals := httptest.NewRecorder()
 	router.ServeHTTP(recGetGoals, reqGetGoals)
@@ -689,7 +797,7 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Errorf("expected 200, got %d", recSetGoals.Code)
 	}
 
-	// 6. Manual meal POST and DELETE
+	// 12. Manual meal POST and DELETE
 	mealBody, _ := json.Marshal(map[string]interface{}{
 		"meal_type": "lunch",
 		"items": []map[string]interface{}{
@@ -710,7 +818,7 @@ func TestNutritionEndpoints(t *testing.T) {
 		t.Errorf("expected 200, got %d", recDelMeal.Code)
 	}
 
-	// 7. Meal item PUT and DELETE
+	// 13. Meal item PUT and DELETE
 	itemBody, _ := json.Marshal(map[string]interface{}{
 		"name":     "Updated Steak",
 		"calories": 450,
@@ -728,15 +836,236 @@ func TestNutritionEndpoints(t *testing.T) {
 	if recDelItem.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", recDelItem.Code)
 	}
+}
 
-	// 8. Test nil nutrition client returns 503
+func TestNutritionErrorBranches(t *testing.T) {
+	penneClient := &mockPenneServiceClient{}
+	nutriErrClient := &mockNutritionServiceClient{
+		processImageFn: func(ctx context.Context, in *nutritionv1.ProcessImageRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error) {
+			return nil, status.Error(codes.Internal, "inference error")
+		},
+		getJobStatusFn: func(ctx context.Context, in *nutritionv1.GetJobStatusRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error) {
+			return nil, status.Error(codes.NotFound, "job not found")
+		},
+		getDailyLogFn: func(ctx context.Context, in *nutritionv1.GetDailyLogRequest, opts ...grpc.CallOption) (*nutritionv1.DailyNutritionSummary, error) {
+			return nil, status.Error(codes.Internal, "daily log error")
+		},
+		getGoalsFn: func(ctx context.Context, in *nutritionv1.GetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error) {
+			return nil, status.Error(codes.Internal, "goals error")
+		},
+		setGoalsFn: func(ctx context.Context, in *nutritionv1.SetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error) {
+			return nil, status.Error(codes.Internal, "set goals error")
+		},
+		addManualMealFn: func(ctx context.Context, in *nutritionv1.AddManualMealRequest, opts ...grpc.CallOption) (*nutritionv1.MealLog, error) {
+			return nil, status.Error(codes.Internal, "add meal error")
+		},
+		deleteMealLogFn: func(ctx context.Context, in *nutritionv1.DeleteMealLogRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error) {
+			return nil, status.Error(codes.NotFound, "meal not found")
+		},
+		updateMealItemFn: func(ctx context.Context, in *nutritionv1.UpdateMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.MealItem, error) {
+			return nil, status.Error(codes.NotFound, "item not found")
+		},
+		deleteMealItemFn: func(ctx context.Context, in *nutritionv1.DeleteMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error) {
+			return nil, status.Error(codes.NotFound, "item not found")
+		},
+	}
+	router := NewRouter(NewGatewayHandlerWithNutrition(penneClient, nutriErrClient, zap.NewNop()), &Config{})
+
+	// 1. Process image error
+	reqImg := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("png-binary")))
+	reqImg.Header.Set("Content-Type", "image/png")
+	recImg := httptest.NewRecorder()
+	router.ServeHTTP(recImg, reqImg)
+	if recImg.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recImg.Code)
+	}
+
+	// 2. Get job status error
+	reqJob := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/jobs/job-err", nil)
+	recJob := httptest.NewRecorder()
+	router.ServeHTTP(recJob, reqJob)
+	if recJob.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", recJob.Code)
+	}
+
+	// 3. Get daily log error
+	reqDaily := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/daily?date=2026-10-13", nil)
+	recDaily := httptest.NewRecorder()
+	router.ServeHTTP(recDaily, reqDaily)
+	if recDaily.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recDaily.Code)
+	}
+
+	// 4. Get goals error
+	reqGoals := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/goals", nil)
+	recGoals := httptest.NewRecorder()
+	router.ServeHTTP(recGoals, reqGoals)
+	if recGoals.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recGoals.Code)
+	}
+
+	// 5. Set goals bad JSON and error
+	reqSetGoalsBad := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/goals", bytes.NewReader([]byte("{bad-json")))
+	recSetGoalsBad := httptest.NewRecorder()
+	router.ServeHTTP(recSetGoalsBad, reqSetGoalsBad)
+	if recSetGoalsBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad json, got %d", recSetGoalsBad.Code)
+	}
+
+	goalsBody, _ := json.Marshal(map[string]interface{}{"calories_target": 2000})
+	reqSetGoalsErr := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/goals", bytes.NewReader(goalsBody))
+	recSetGoalsErr := httptest.NewRecorder()
+	router.ServeHTTP(recSetGoalsErr, reqSetGoalsErr)
+	if recSetGoalsErr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recSetGoalsErr.Code)
+	}
+
+	// 6. Add manual meal bad JSON and error
+	reqMealBad := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/meals", bytes.NewReader([]byte("{bad-json")))
+	recMealBad := httptest.NewRecorder()
+	router.ServeHTTP(recMealBad, reqMealBad)
+	if recMealBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad json, got %d", recMealBad.Code)
+	}
+
+	mealBody, _ := json.Marshal(map[string]interface{}{"meal_type": "lunch"})
+	reqMealErr := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/meals", bytes.NewReader(mealBody))
+	recMealErr := httptest.NewRecorder()
+	router.ServeHTTP(recMealErr, reqMealErr)
+	if recMealErr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", recMealErr.Code)
+	}
+
+	// 7. Delete meal error
+	reqDelMeal := httptest.NewRequest(http.MethodDelete, "/api/v1/nutrition/meals/meal-err", nil)
+	recDelMeal := httptest.NewRecorder()
+	router.ServeHTTP(recDelMeal, reqDelMeal)
+	if recDelMeal.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", recDelMeal.Code)
+	}
+
+	// 8. Update item bad JSON and error
+	reqItemBad := httptest.NewRequest(http.MethodPut, "/api/v1/nutrition/items/item-1", bytes.NewReader([]byte("{bad-json")))
+	recItemBad := httptest.NewRecorder()
+	router.ServeHTTP(recItemBad, reqItemBad)
+	if recItemBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad json, got %d", recItemBad.Code)
+	}
+
+	itemBody, _ := json.Marshal(map[string]interface{}{"name": "item"})
+	reqItemErr := httptest.NewRequest(http.MethodPut, "/api/v1/nutrition/items/item-1", bytes.NewReader(itemBody))
+	recItemErr := httptest.NewRecorder()
+	router.ServeHTTP(recItemErr, reqItemErr)
+	if recItemErr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", recItemErr.Code)
+	}
+
+	// 9. Delete item error
+	reqDelItem := httptest.NewRequest(http.MethodDelete, "/api/v1/nutrition/items/item-err", nil)
+	recDelItem := httptest.NewRecorder()
+	router.ServeHTTP(recDelItem, reqDelItem)
+	if recDelItem.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", recDelItem.Code)
+	}
+
+	// 10. Nil nutrition client on all routes
 	hNil := NewGatewayHandler(penneClient, zap.NewNop())
 	rNil := NewRouter(hNil, &Config{})
-	reqNil := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/goals", nil)
-	recNil := httptest.NewRecorder()
-	rNil.ServeHTTP(recNil, reqNil)
-	if recNil.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503 when nutritionClient is nil, got %d", recNil.Code)
+	nilRoutes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/nutrition/upload"},
+		{http.MethodGet, "/api/v1/nutrition/jobs/1"},
+		{http.MethodGet, "/api/v1/nutrition/daily"},
+		{http.MethodGet, "/api/v1/nutrition/goals"},
+		{http.MethodPost, "/api/v1/nutrition/goals"},
+		{http.MethodPost, "/api/v1/nutrition/meals"},
+		{http.MethodDelete, "/api/v1/nutrition/meals/1"},
+		{http.MethodPut, "/api/v1/nutrition/items/1"},
+		{http.MethodDelete, "/api/v1/nutrition/items/1"},
+	}
+	for _, nr := range nilRoutes {
+		req := httptest.NewRequest(nr.method, nr.path, nil)
+		rec := httptest.NewRecorder()
+		rNil.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("for %s %s with nil client, expected 503, got %d", nr.method, nr.path, rec.Code)
+		}
+	}
+}
+
+func TestNewGatewayHandlerFX(t *testing.T) {
+	penneClient := &mockPenneServiceClient{}
+	nutriClient := &mockNutritionServiceClient{}
+	h := NewGatewayHandlerFX(GatewayHandlerParams{
+		PenneClient:     penneClient,
+		Log:             zap.NewNop(),
+		NutritionClient: nutriClient,
+	})
+	if h == nil || h.nutritionClient == nil {
+		t.Fatal("expected non-nil gateway handler with nutrition client")
+	}
+}
+
+func TestNewNutritionClient(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen error: %v", err)
+	}
+	defer lis.Close()
+
+	client, err := NewNutritionClient(&Config{NutritionServiceTarget: lis.Addr().String()})
+	if err != nil {
+		t.Fatalf("unexpected client error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+
+	// Empty target defaults to 127.0.0.1:50052
+	clientDef, err := NewNutritionClient(&Config{NutritionServiceTarget: ""})
+	if err != nil {
+		t.Fatalf("unexpected client error: %v", err)
+	}
+	if clientDef == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+func TestStartServer_NilLCAndError(t *testing.T) {
+	cfg := &Config{Port: "8080"}
+	router := mux.NewRouter()
+	srv, err := StartServer(cfg, router, nil, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv == nil {
+		t.Fatal("expected non-nil server")
+	}
+
+	// Port collision error on Start
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen error: %v", err)
+	}
+	defer lis.Close()
+	_, port, _ := net.SplitHostPort(lis.Addr().String())
+
+	cfgErr := &Config{Port: port}
+	app := fx.New(
+		fx.NopLogger,
+		fx.Provide(
+			func() *Config { return cfgErr },
+			func() *mux.Router { return router },
+			zap.NewNop,
+		),
+		fx.Invoke(StartServer),
+	)
+	startCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := app.Start(startCtx); err == nil {
+		t.Fatal("expected port collision error on app.Start, got nil")
 	}
 }
 
