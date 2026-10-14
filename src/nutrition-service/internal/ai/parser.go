@@ -3,9 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -110,103 +108,7 @@ func (p *VisionAIParser) SetHTTPClient(client *http.Client) {
 	p.httpClient = client
 }
 
-// Preset meal profiles used when simulating AI analysis or when fallback is active.
-var presetMealTemplates = [][]core.MealItem{
-	{
-		{
-			Name:                 "Grilled Chicken Breast",
-			EstimatedWeightGrams: 200,
-			Calories:             330,
-			ProteinGrams:         62,
-			CarbsGrams:           0,
-			FatGrams:             7.2,
-			FiberGrams:           0,
-			SodiumMg:             150,
-			ConfidenceScore:      0.96,
-			Ingredients:          []string{"Chicken breast", "Olive oil", "Black pepper", "Sea salt"},
-		},
-		{
-			Name:                 "Steamed Jasmine Rice",
-			EstimatedWeightGrams: 150,
-			Calories:             195,
-			ProteinGrams:         4.2,
-			CarbsGrams:           43,
-			FatGrams:             0.5,
-			FiberGrams:           0.8,
-			SodiumMg:             5,
-			ConfidenceScore:      0.94,
-			Ingredients:          []string{"White jasmine rice", "Water"},
-		},
-		{
-			Name:                 "Steamed Broccoli & Carrots",
-			EstimatedWeightGrams: 120,
-			Calories:             45,
-			ProteinGrams:         3.1,
-			CarbsGrams:           8.5,
-			FatGrams:             0.4,
-			FiberGrams:           3.8,
-			SodiumMg:             40,
-			ConfidenceScore:      0.92,
-			Ingredients:          []string{"Broccoli florets", "Carrots"},
-		},
-	},
-	{
-		{
-			Name:                 "Avocado & Poached Egg Sourdough",
-			EstimatedWeightGrams: 220,
-			Calories:             420,
-			ProteinGrams:         18,
-			CarbsGrams:           34,
-			FatGrams:             24,
-			FiberGrams:           7.5,
-			SodiumMg:             410,
-			ConfidenceScore:      0.95,
-			Ingredients:          []string{"Artisan sourdough bread", "Ripe avocado", "Free-range eggs", "Chili flakes"},
-		},
-	},
-	{
-		{
-			Name:                 "Greek Yogurt Protein Berry Bowl",
-			EstimatedWeightGrams: 280,
-			Calories:             310,
-			ProteinGrams:         32,
-			CarbsGrams:           38,
-			FatGrams:             3.5,
-			FiberGrams:           6.2,
-			SodiumMg:             85,
-			ConfidenceScore:      0.97,
-			Ingredients:          []string{"Non-fat Greek yogurt", "Blueberries", "Strawberries", "Whey protein isolate", "Chia seeds"},
-		},
-	},
-	{
-		{
-			Name:                 "Atlantic Salmon Fillet with Quinoa",
-			EstimatedWeightGrams: 250,
-			Calories:             490,
-			ProteinGrams:         44,
-			CarbsGrams:           29,
-			FatGrams:             22,
-			FiberGrams:           4.1,
-			SodiumMg:             280,
-			ConfidenceScore:      0.95,
-			Ingredients:          []string{"Atlantic salmon", "Cooked quinoa", "Asparagus spears", "Lemon juice", "Garlic herb butter"},
-		},
-	},
-	{
-		{
-			Name:                 "Tofu & Edamame Poke Bowl",
-			EstimatedWeightGrams: 300,
-			Calories:             440,
-			ProteinGrams:         28,
-			CarbsGrams:           52,
-			FatGrams:             14,
-			FiberGrams:           8.0,
-			SodiumMg:             560,
-			ConfidenceScore:      0.93,
-			Ingredients:          []string{"Organic firm tofu", "Shelled edamame", "Brown rice", "Cucumber", "Sesame ginger dressing"},
-		},
-	},
-}
+
 
 // Gemini API Request/Response structs
 type geminiPart struct {
@@ -320,23 +222,11 @@ Return pure JSON matching this exact schema:
     }
   ]
 }
-If no food is detected, return:
+If no food or meal is detected, or the image cannot be identified as food, return:
 {
-  "items": [
-    {
-      "name": "Unidentified Food / Snack",
-      "estimated_weight_grams": 100,
-      "calories": 200,
-      "protein_grams": 4,
-      "carbs_grams": 25,
-      "fat_grams": 8,
-      "fiber_grams": 1,
-      "sodium_mg": 120,
-      "confidence_score": 0.5,
-      "ingredients": ["Assorted ingredients"]
-    }
-  ]
-}`, notesContext)
+  "items": []
+}
+`, notesContext)
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{
@@ -377,6 +267,12 @@ If no food is detected, return:
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
 
+			p.log.Info("Gemini Vision AI: Calling model endpoint",
+				zap.String("model", targetModel),
+				zap.Int("attempt", attempt),
+				zap.String("user_notes", userNotes),
+			)
+
 			resp, err := p.httpClient.Do(httpReq)
 			if err != nil {
 				lastErr = err
@@ -400,9 +296,9 @@ If no food is detected, return:
 				continue
 			}
 
-			if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
-				lastErr = fmt.Errorf("gemini api returned transient status %d for model %s: %s", resp.StatusCode, targetModel, string(respBytes))
-				p.log.Warn("Gemini Vision AI: transient demand spike (503/429), retrying with backoff",
+			if resp.StatusCode == http.StatusServiceUnavailable {
+				lastErr = fmt.Errorf("gemini api returned 503 high demand for model %s: %s", targetModel, string(respBytes))
+				p.log.Warn("Gemini Vision AI: transient demand spike (503), retrying with backoff",
 					zap.String("model", targetModel),
 					zap.Int("attempt", attempt),
 					zap.Int("status", resp.StatusCode),
@@ -417,19 +313,28 @@ If no food is detected, return:
 
 			if resp.StatusCode != http.StatusOK {
 				lastErr = fmt.Errorf("gemini api returned status %d for model %s: %s", resp.StatusCode, targetModel, string(respBytes))
-				break // Non-transient status, try next candidate model
+				p.log.Error("Gemini Vision AI: API non-OK response from Google",
+					zap.String("model", targetModel),
+					zap.Int("attempt", attempt),
+					zap.Int("status_code", resp.StatusCode),
+					zap.String("response_body", string(respBytes)),
+				)
+				break // Non-transient status or quota limit, try next candidate model
 			}
 
 			var geminiResp geminiResponse
 			if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+				p.log.Error("Gemini Vision AI: failed to decode response JSON", zap.Error(err), zap.String("raw_response", string(respBytes)))
 				return nil, fmt.Errorf("failed to decode gemini response: %w", err)
 			}
 
 			if geminiResp.Error != nil {
+				p.log.Error("Gemini Vision AI: Google returned error in response", zap.String("message", geminiResp.Error.Message), zap.Int("code", geminiResp.Error.Code))
 				return nil, fmt.Errorf("gemini error: %s (code %d)", geminiResp.Error.Message, geminiResp.Error.Code)
 			}
 
 			if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+				p.log.Error("Gemini Vision AI: returned no content candidates", zap.String("raw_response", string(respBytes)))
 				return nil, fmt.Errorf("gemini returned no content candidates")
 			}
 
@@ -445,14 +350,17 @@ If no food is detected, return:
 
 			var output geminiNutritionOutput
 			if err := json.Unmarshal([]byte(rawText), &output); err != nil {
+				p.log.Error("Gemini Vision AI: failed to parse structured nutrition JSON", zap.Error(err), zap.String("generated_text", rawText))
 				return nil, fmt.Errorf("failed to parse nutrition json from gemini output: %w", err)
 			}
 
 			if len(output.Items) == 0 {
-				return nil, fmt.Errorf("gemini returned 0 nutrition items")
+				p.log.Warn("Gemini Vision AI: Model identified 0 food items in the image", zap.String("generated_text", rawText), zap.String("user_notes", userNotes))
+				return nil, fmt.Errorf("unable to identify food in image: gemini vision ai detected 0 food items")
 			}
 
 			result := make([]core.MealItem, len(output.Items))
+			dishSummaries := make([]string, len(output.Items))
 			for i, it := range output.Items {
 				ingredients := it.Ingredients
 				if len(ingredients) == 0 {
@@ -475,50 +383,27 @@ If no food is detected, return:
 					ConfidenceScore:      conf,
 					Ingredients:          ingredients,
 				}
+				dishSummaries[i] = fmt.Sprintf("%s (%.0f kcal, %.1fg protein, %.1fg carbs, %.1fg fat)", it.Name, it.Calories, it.ProteinGrams, it.CarbsGrams, it.FatGrams)
 			}
+
+			p.log.Info("Gemini Vision AI: Successfully extracted real meal items",
+				zap.String("model", targetModel),
+				zap.Int("items_detected", len(result)),
+				zap.Strings("dishes", dishSummaries),
+			)
 
 			return result, nil
 		}
 	}
 
 	if lastErr != nil {
-		return nil, lastErr
+		p.log.Error("Gemini Vision AI: All model candidates and retries exhausted. Hard failure.", zap.Error(lastErr), zap.String("notes", userNotes))
+		return nil, fmt.Errorf("gemini api call failed after retries: %w", lastErr)
 	}
 	return nil, fmt.Errorf("gemini api call failed after retries")
 }
 
-func (p *VisionAIParser) fallbackAnalyze(ctx context.Context, imageData []byte, mimeType string) ([]core.MealItem, error) {
-	// Calculate deterministic hash of image so repeat images produce consistent results
-	hasher := sha256.New()
-	hasher.Write(imageData)
-	hashSum := hex.EncodeToString(hasher.Sum(nil))
-
-	// Pick a realistic profile deterministically based on hash
-	idx := int(hashSum[0]) % len(presetMealTemplates)
-	templateItems := presetMealTemplates[idx]
-
-	p.log.Info("AI Vision analyzed meal image using fallback template",
-		zap.String("mime_type", mimeType),
-		zap.Int("bytes", len(imageData)),
-		zap.Int("items_detected", len(templateItems)),
-	)
-
-	select {
-	case <-time.After(30 * time.Millisecond):
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-
-	result := make([]core.MealItem, len(templateItems))
-	for i, item := range templateItems {
-		itemCopy := item
-		itemCopy.ID = uuid.New().String()
-		result[i] = itemCopy
-	}
-
-	return result, nil
-}
-
+// AnalyzeMealImage invokes real multimodal vision analysis and strictly disallows demo data.
 func (p *VisionAIParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]core.MealItem, error) {
 	if len(imageData) == 0 {
 		return nil, fmt.Errorf("empty image data received")
@@ -529,25 +414,37 @@ func (p *VisionAIParser) AnalyzeMealImage(ctx context.Context, imageData []byte,
 		userNotes = notes[0]
 	}
 
-	if p.apiKey != "" {
-		p.log.Info("Dispatching actual Gemini AI API vision analysis from Cadence activity",
-			zap.String("model", p.model),
-			zap.String("mime_type", mimeType),
-			zap.String("notes", userNotes),
-			zap.Int("bytes", len(imageData)),
-		)
-		items, err := p.callGeminiVisionAPI(ctx, imageData, mimeType, userNotes)
-		if err == nil && len(items) > 0 {
-			p.log.Info("Actual Gemini AI vision analysis succeeded",
-				zap.String("model", p.model),
-				zap.Int("items_count", len(items)),
-			)
-			return items, nil
-		}
-		p.log.Warn("Actual Gemini AI vision call failed, falling back to resilient template",
-			zap.Error(err),
-		)
+	if p.apiKey == "" {
+		p.log.Error("Gemini Vision AI: GEMINI_API_KEY environment variable is not configured; demo fallback is strictly disabled")
+		return nil, fmt.Errorf("GEMINI_API_KEY is not configured on server; meal analysis cannot proceed and demo data is disabled")
 	}
 
-	return p.fallbackAnalyze(ctx, imageData, mimeType)
+	p.log.Info("Gemini Vision AI: Dispatching actual AI vision analysis from Cadence activity",
+		zap.String("model", p.model),
+		zap.String("mime_type", mimeType),
+		zap.String("notes", userNotes),
+		zap.Int("bytes", len(imageData)),
+	)
+
+	items, err := p.callGeminiVisionAPI(ctx, imageData, mimeType, userNotes)
+	if err != nil {
+		p.log.Error("Gemini Vision AI: Analysis failed; demo fallback is strictly disabled",
+			zap.Error(err),
+			zap.String("notes", userNotes),
+		)
+		return nil, fmt.Errorf("ai vision analysis failed: %w", err)
+	}
+
+	if len(items) == 0 {
+		p.log.Error("Gemini Vision AI: 0 items identified in image",
+			zap.String("notes", userNotes),
+		)
+		return nil, fmt.Errorf("unable to detect food items in image: 0 items identified")
+	}
+
+	p.log.Info("Actual Gemini AI vision analysis succeeded",
+		zap.String("model", p.model),
+		zap.Int("items_count", len(items)),
+	)
+	return items, nil
 }

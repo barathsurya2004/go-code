@@ -81,9 +81,14 @@ case "$SERVICE_NAME" in
     sleep 2
     docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
     docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
-    echo "Rebuilding and restarting nutrition-service..."
+    echo "Rebuilding and restarting nutrition-service and nutrition-cadence-worker..."
     docker compose build nutrition-service
-    docker compose up -d nutrition-service
+    docker compose up -d nutrition-service nutrition-cadence-worker
+    ;;
+  cadence-nutrition-service|nutrition-cadence-worker)
+    echo "Rebuilding and restarting nutrition-cadence-worker..."
+    docker compose build nutrition-service
+    docker compose up -d nutrition-cadence-worker
     ;;
   *)
     echo "Deploying target service: $SERVICE_NAME..."

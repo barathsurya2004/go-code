@@ -25,7 +25,7 @@ func NewNutritionActivities(repo core.NutritionRepository, aiParser core.AIParse
 }
 
 // UpdateJobStatus updates the state of an existing queue processing job.
-func (a *NutritionActivities) UpdateJobStatus(ctx context.Context, jobID, userUUID, status string) error {
+func (a *NutritionActivities) UpdateJobStatus(ctx context.Context, jobID, userUUID, status, errorMessage string) error {
 	job, err := a.repo.GetJob(ctx, userUUID, jobID)
 	if err != nil || job == nil {
 		job = &core.JobStatus{
@@ -35,12 +35,15 @@ func (a *NutritionActivities) UpdateJobStatus(ctx context.Context, jobID, userUU
 		}
 	}
 	job.Status = status
+	if errorMessage != "" {
+		job.ErrorMessage = errorMessage
+	}
 	job.UpdatedAt = time.Now()
 	if err := a.repo.SaveJob(ctx, job); err != nil {
 		a.log.Error("Failed to update job status", zap.String("job_id", jobID), zap.String("status", status), zap.Error(err))
 		return err
 	}
-	a.log.Info("Cadence activity: updated job status", zap.String("job_id", jobID), zap.String("status", status))
+	a.log.Info("Cadence activity: updated job status", zap.String("job_id", jobID), zap.String("status", status), zap.String("error_message", errorMessage))
 	return nil
 }
 

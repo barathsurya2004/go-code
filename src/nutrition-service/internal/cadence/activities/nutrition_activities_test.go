@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barathsurya2004/go-code/nutrition-service/internal/ai"
 	"github.com/barathsurya2004/go-code/nutrition-service/internal/core"
 	"github.com/barathsurya2004/go-code/nutrition-service/internal/db"
 	"go.uber.org/zap"
@@ -36,11 +35,11 @@ func TestUpdateJobStatus(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 	memRepo := db.NewMemoryNutritionRepository(logger)
-	aiParser := ai.NewVisionAIParser(logger)
+	aiParser := &mockSuccessParser{}
 	acts := NewNutritionActivities(memRepo, aiParser, logger)
 
 	// Case 1: Job does not exist yet, creates it
-	err := acts.UpdateJobStatus(ctx, "job-1", "user-1", "PROCESSING")
+	err := acts.UpdateJobStatus(ctx, "job-1", "user-1", "PROCESSING", "")
 	if err != nil {
 		t.Fatalf("unexpected error updating non-existent job: %v", err)
 	}
@@ -53,14 +52,17 @@ func TestUpdateJobStatus(t *testing.T) {
 		t.Errorf("expected status PROCESSING, got %s", job.Status)
 	}
 
-	// Case 2: Update existing job
-	err = acts.UpdateJobStatus(ctx, "job-1", "user-1", "COMPLETED")
+	// Case 2: Update existing job with failure error message
+	err = acts.UpdateJobStatus(ctx, "job-1", "user-1", "FAILED", "simulated vision failure")
 	if err != nil {
 		t.Fatalf("unexpected error updating existing job: %v", err)
 	}
 	job, _ = memRepo.GetJob(ctx, "user-1", "job-1")
-	if job.Status != "COMPLETED" {
-		t.Errorf("expected status COMPLETED, got %s", job.Status)
+	if job.Status != "FAILED" {
+		t.Errorf("expected status FAILED, got %s", job.Status)
+	}
+	if job.ErrorMessage != "simulated vision failure" {
+		t.Errorf("expected error message recorded, got %s", job.ErrorMessage)
 	}
 
 	// Case 3: Repo error
@@ -69,7 +71,7 @@ func TestUpdateJobStatus(t *testing.T) {
 		saveJobErr:                errors.New("db error"),
 	}
 	errActs := NewNutritionActivities(errRepo, aiParser, logger)
-	err = errActs.UpdateJobStatus(ctx, "job-2", "user-1", "PROCESSING")
+	err = errActs.UpdateJobStatus(ctx, "job-2", "user-1", "PROCESSING", "")
 	if err == nil {
 		t.Error("expected error when repo fails")
 	}
@@ -79,7 +81,7 @@ func TestAnalyzeMealImage(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 	memRepo := db.NewMemoryNutritionRepository(logger)
-	aiParser := ai.NewVisionAIParser(logger)
+	aiParser := &mockSuccessParser{}
 	acts := NewNutritionActivities(memRepo, aiParser, logger)
 
 	// Case 1: Empty image data
@@ -88,7 +90,7 @@ func TestAnalyzeMealImage(t *testing.T) {
 		t.Error("expected error for empty image data")
 	}
 
-	// Case 2: Valid image data
+	// Case 2: Valid image data with mock real AI parsing
 	items, err := acts.AnalyzeMealImage(ctx, []byte("fake-image-bytes"), "image/jpeg", "healthy dinner")
 	if err != nil {
 		t.Fatalf("unexpected error analyzing image: %v", err)
@@ -104,6 +106,17 @@ func TestAnalyzeMealImage(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when AI parser fails")
 	}
+}
+
+type mockSuccessParser struct{}
+
+func (m *mockSuccessParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]core.MealItem, error) {
+	if len(imageData) == 0 {
+		return nil, errors.New("empty image data received")
+	}
+	return []core.MealItem{
+		{ID: "item-1", Name: "Grilled Chicken Breast", Calories: 380, ProteinGrams: 48},
+	}, nil
 }
 
 type mockFailingParser struct{}

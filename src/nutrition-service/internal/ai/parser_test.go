@@ -11,10 +11,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestVisionAIParser_FallbackAndValidation(t *testing.T) {
+func TestVisionAIParser_ValidationAndMissingKey(t *testing.T) {
 	logger := zap.NewNop()
 	parser := NewVisionAIParser(logger)
-	parser.apiKey = "" // Ensure fallback mode
+	parser.apiKey = "" // Missing API key must hard fail
 	ctx := context.Background()
 
 	// 1. Empty image error
@@ -23,20 +23,11 @@ func TestVisionAIParser_FallbackAndValidation(t *testing.T) {
 		t.Error("expected error for empty image bytes")
 	}
 
-	// 2. Valid image analysis with fallback
+	// 2. Valid image with missing API key must hard fail (no demo fallback)
 	dummyImage := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03, 0x04}
-	items, err := parser.AnalyzeMealImage(ctx, dummyImage, "image/png")
-	if err != nil {
-		t.Fatalf("unexpected error analyzing image: %v", err)
-	}
-	if len(items) == 0 {
-		t.Fatal("expected at least 1 item detected")
-	}
-	if items[0].Calories <= 0 || items[0].ProteinGrams < 0 {
-		t.Errorf("invalid extracted nutrition: %+v", items[0])
-	}
-	if len(items[0].Ingredients) == 0 {
-		t.Errorf("expected ingredients detected, got none")
+	_, err = parser.AnalyzeMealImage(ctx, dummyImage, "image/png")
+	if err == nil {
+		t.Fatal("expected error when GEMINI_API_KEY is missing, demo fallback must be disabled")
 	}
 
 	// 3. Context cancelled
@@ -108,10 +99,35 @@ func TestVisionAIParser_LiveGeminiSuccess(t *testing.T) {
 	}
 }
 
-func TestVisionAIParser_GeminiErrorFallback(t *testing.T) {
+func TestVisionAIParser_GeminiErrorHardFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"error": {"code": 503, "message": "High demand"}}`))
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error": {"code": 400, "message": "Invalid request parameter"}}`))
+	}))
+	defer server.Close()
+
+	logger := zap.NewNop()
+	parser := NewVisionAIParser(logger)
+	parser.apiKey = "test-key"
+	parser.SetBaseURL(server.URL)
+	parser.SetModel("test-model")
+
+	dummyImage := []byte{0x01, 0x02, 0x03, 0x04}
+	// Fallback is strictly disabled: must hard fail when Gemini fails
+	items, err := parser.AnalyzeMealImage(context.Background(), dummyImage, "image/jpeg")
+	if err == nil {
+		t.Fatalf("expected hard failure when gemini errors, got items: %+v", items)
+	}
+	if len(items) > 0 {
+		t.Fatalf("expected 0 items, got %d (no demo data allowed)", len(items))
+	}
+}
+
+func TestVisionAIParser_NoFoodDetectedHardFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"candidates": [{"content": {"parts": [{"text": "{\"items\": []}"}]}}]}`))
 	}))
 	defer server.Close()
 
@@ -121,12 +137,11 @@ func TestVisionAIParser_GeminiErrorFallback(t *testing.T) {
 	parser.SetBaseURL(server.URL)
 
 	dummyImage := []byte{0x01, 0x02, 0x03, 0x04}
-	// Should fall back gracefully to template matching instead of erroring out
 	items, err := parser.AnalyzeMealImage(context.Background(), dummyImage, "image/jpeg")
-	if err != nil {
-		t.Fatalf("expected fallback success, got error: %v", err)
+	if err == nil {
+		t.Fatalf("expected hard failure when no food is detected, got nil error")
 	}
-	if len(items) == 0 {
-		t.Fatal("expected fallback items")
+	if len(items) > 0 {
+		t.Fatalf("expected 0 items, got %d", len(items))
 	}
 }

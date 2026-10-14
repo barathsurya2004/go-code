@@ -11,7 +11,7 @@ import (
 func buildApp(opts ...fx.Option) *fx.App {
 	baseOpts := []fx.Option{
 		pkg.Module,
-		cadence.Module,
+		cadence.ClientModule,
 		grpcserver.Module,
 		fx.Invoke(func(s *grpc.Server) {}),
 	}
@@ -19,7 +19,8 @@ func buildApp(opts ...fx.Option) *fx.App {
 	return fx.New(baseOpts...)
 }
 
+var appFactory = buildApp
+
 func main() {
-	app := buildApp()
-	app.Run()
+	appFactory().Run()
 }

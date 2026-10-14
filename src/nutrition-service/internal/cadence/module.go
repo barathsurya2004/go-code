@@ -5,9 +5,19 @@ import (
 	"go.uber.org/fx"
 )
 
-// Module exports the Cadence dependency injection module for Uber FX.
-var Module = fx.Module(
-	"nutrition-cadence",
+// ClientModule exports the Cadence client and config without starting a worker (used by gRPC server).
+var ClientModule = fx.Module(
+	"nutrition-cadence-client",
+	fx.Provide(
+		NewCadenceConfig,
+		NewCadenceServiceClient,
+		NewCadenceClient,
+	),
+)
+
+// WorkerModule exports the Cadence worker, registering workflows and activities and starting pollers.
+var WorkerModule = fx.Module(
+	"nutrition-cadence-worker",
 	fx.Provide(
 		NewCadenceConfig,
 		NewCadenceServiceClient,
@@ -16,3 +26,6 @@ var Module = fx.Module(
 	),
 	fx.Invoke(StartCadenceWorker),
 )
+
+// Module aliases WorkerModule for backward compatibility.
+var Module = WorkerModule

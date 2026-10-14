@@ -20,6 +20,22 @@ func (f *failingParser) AnalyzeMealImage(ctx context.Context, imageData []byte, 
 	return nil, fmt.Errorf("simulated AI parsing error")
 }
 
+type mockSuccessParser struct{}
+
+func (m *mockSuccessParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]core.MealItem, error) {
+	return []core.MealItem{
+		{
+			ID:           "test-item-1",
+			Name:         "Grilled Chicken Breast",
+			Calories:     350,
+			ProteinGrams: 42,
+			CarbsGrams:   5,
+			FatGrams:     8,
+			Ingredients:  []string{"Chicken breast"},
+		},
+	}, nil
+}
+
 type errorRepo struct {
 	core.NutritionRepository
 	failSaveJob   bool
@@ -43,7 +59,7 @@ func (e *errorRepo) CreateMealLog(ctx context.Context, log *core.MealLog) (*core
 func TestAsyncImageQueueWorker(t *testing.T) {
 	logger := zap.NewNop()
 	repo := db.NewMemoryNutritionRepository(logger)
-	aiParser := ai.NewVisionAIParser(logger)
+	aiParser := &mockSuccessParser{}
 	worker := NewAsyncImageQueueWorker(repo, aiParser, logger)
 	worker.SetProcessingDelay(10 * time.Millisecond)
 

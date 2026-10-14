@@ -22,7 +22,7 @@ func TestWorkflowTestSuite(t *testing.T) {
 }
 
 func registerActivitiesOnEnv(env *testsuite.TestWorkflowEnvironment) {
-	env.RegisterActivityWithOptions(func(ctx context.Context, jobID, userUUID, status string) error {
+	env.RegisterActivityWithOptions(func(ctx context.Context, jobID, userUUID, status, errorMessage string) error {
 		return nil
 	}, activity.RegisterOptions{Name: "UpdateJobStatusActivity"})
 
@@ -66,7 +66,7 @@ func (s *WorkflowTestSuite) Test_ProcessMealImageWorkflow_Success() {
 		},
 	}
 
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING", "").Return(nil)
 	env.OnActivity("AnalyzeMealImageActivity", mock.Anything, input.ImageData, input.MimeType, input.Notes).Return(detected, nil)
 	env.OnActivity("PurgeRawImageActivity", mock.Anything, input.JobID, len(input.ImageData)).Return(nil)
 	env.OnActivity("PersistMealLogActivity", mock.Anything, input.UserUUID, input.MealType, input.Notes, detected).Return("meal-log-success", nil)
@@ -93,7 +93,7 @@ func (s *WorkflowTestSuite) Test_ProcessMealImageWorkflow_InitialStatusError() {
 		UserUUID: "user-err-1",
 	}
 
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING").Return(errors.New("db down"))
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING", "").Return(errors.New("db down"))
 
 	env.ExecuteWorkflow(ProcessMealImageWorkflow, input)
 
@@ -112,9 +112,9 @@ func (s *WorkflowTestSuite) Test_ProcessMealImageWorkflow_AIParseError() {
 		MimeType:  "image/png",
 	}
 
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING", "").Return(nil)
 	env.OnActivity("AnalyzeMealImageActivity", mock.Anything, input.ImageData, input.MimeType, input.Notes).Return(nil, errors.New("ai error"))
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "FAILED").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "FAILED", "ai error").Return(nil)
 
 	env.ExecuteWorkflow(ProcessMealImageWorkflow, input)
 
@@ -135,11 +135,11 @@ func (s *WorkflowTestSuite) Test_ProcessMealImageWorkflow_PersistError() {
 
 	detected := []core.MealItem{{Name: "Eggs", Calories: 140}}
 
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING", "").Return(nil)
 	env.OnActivity("AnalyzeMealImageActivity", mock.Anything, input.ImageData, input.MimeType, input.Notes).Return(detected, nil)
 	env.OnActivity("PurgeRawImageActivity", mock.Anything, input.JobID, len(input.ImageData)).Return(nil)
 	env.OnActivity("PersistMealLogActivity", mock.Anything, input.UserUUID, input.MealType, input.Notes, detected).Return("", errors.New("write failed"))
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "FAILED").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "FAILED", "write failed").Return(nil)
 
 	env.ExecuteWorkflow(ProcessMealImageWorkflow, input)
 
@@ -160,7 +160,7 @@ func (s *WorkflowTestSuite) Test_ProcessMealImageWorkflow_CompleteJobError() {
 
 	detected := []core.MealItem{{Name: "Oatmeal", Calories: 150}}
 
-	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING").Return(nil)
+	env.OnActivity("UpdateJobStatusActivity", mock.Anything, input.JobID, input.UserUUID, "PROCESSING", "").Return(nil)
 	env.OnActivity("AnalyzeMealImageActivity", mock.Anything, input.ImageData, input.MimeType, input.Notes).Return(detected, nil)
 	env.OnActivity("PurgeRawImageActivity", mock.Anything, input.JobID, len(input.ImageData)).Return(nil)
 	env.OnActivity("PersistMealLogActivity", mock.Anything, input.UserUUID, input.MealType, input.Notes, detected).Return("meal-log-1", nil)

@@ -32,7 +32,7 @@ func ProcessMealImageWorkflow(ctx workflow.Context, input ProcessMealWorkflowInp
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	// Step 1: Update status to PROCESSING
-	err := workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "PROCESSING").Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "PROCESSING", "").Get(ctx, nil)
 	if err != nil {
 		return ProcessMealWorkflowResult{}, err
 	}
@@ -41,7 +41,7 @@ func ProcessMealImageWorkflow(ctx workflow.Context, input ProcessMealWorkflowInp
 	var detectedItems []core.MealItem
 	err = workflow.ExecuteActivity(ctx, "AnalyzeMealImageActivity", input.ImageData, input.MimeType, input.Notes).Get(ctx, &detectedItems)
 	if err != nil {
-		_ = workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "FAILED").Get(ctx, nil)
+		_ = workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "FAILED", err.Error()).Get(ctx, nil)
 		return ProcessMealWorkflowResult{}, err
 	}
 
@@ -53,7 +53,7 @@ func ProcessMealImageWorkflow(ctx workflow.Context, input ProcessMealWorkflowInp
 	var mealLogID string
 	err = workflow.ExecuteActivity(ctx, "PersistMealLogActivity", input.UserUUID, input.MealType, input.Notes, detectedItems).Get(ctx, &mealLogID)
 	if err != nil {
-		_ = workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "FAILED").Get(ctx, nil)
+		_ = workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "FAILED", err.Error()).Get(ctx, nil)
 		return ProcessMealWorkflowResult{}, err
 	}
 
