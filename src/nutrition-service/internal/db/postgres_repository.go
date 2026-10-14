@@ -176,7 +176,7 @@ func (r *PostgresNutritionRepository) CreateMealLog(ctx context.Context, log *co
 	}
 
 	if log.ID == "" {
-		log.ID = "meal-" + uuid.New().String()
+		log.ID = uuid.New().String()
 	}
 	if log.LoggedAt.IsZero() {
 		log.LoggedAt = time.Now()
@@ -211,7 +211,7 @@ func (r *PostgresNutritionRepository) CreateMealLog(ctx context.Context, log *co
 	for i := range log.Items {
 		item := &log.Items[i]
 		if item.ID == "" {
-			item.ID = "item-" + uuid.New().String()
+			item.ID = uuid.New().String()
 		}
 		item.MealLogID = log.ID
 
