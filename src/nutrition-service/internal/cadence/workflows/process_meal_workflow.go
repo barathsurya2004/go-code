@@ -39,7 +39,7 @@ func ProcessMealImageWorkflow(ctx workflow.Context, input ProcessMealWorkflowInp
 
 	// Step 2: AI Vision OCR and Portion Extraction
 	var detectedItems []core.MealItem
-	err = workflow.ExecuteActivity(ctx, "AnalyzeMealImageActivity", input.ImageData, input.MimeType).Get(ctx, &detectedItems)
+	err = workflow.ExecuteActivity(ctx, "AnalyzeMealImageActivity", input.ImageData, input.MimeType, input.Notes).Get(ctx, &detectedItems)
 	if err != nil {
 		_ = workflow.ExecuteActivity(ctx, "UpdateJobStatusActivity", input.JobID, input.UserUUID, "FAILED").Get(ctx, nil)
 		return ProcessMealWorkflowResult{}, err

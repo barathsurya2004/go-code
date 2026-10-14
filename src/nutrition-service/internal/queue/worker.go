@@ -213,7 +213,7 @@ func (w *AsyncImageQueueWorker) processPayload(p *queuePayload) {
 	}
 
 	// Call AI Vision to extract meal items
-	items, err := w.aiParser.AnalyzeMealImage(ctx, p.imageData, p.mimeType)
+	items, err := w.aiParser.AnalyzeMealImage(ctx, p.imageData, p.mimeType, p.notes)
 
 	// BACKEND OPTIMIZATION:
 	// As requested, once AI extraction is complete, immediately wipe and purge the raw photo

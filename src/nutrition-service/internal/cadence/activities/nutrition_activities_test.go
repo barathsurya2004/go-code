@@ -83,13 +83,13 @@ func TestAnalyzeMealImage(t *testing.T) {
 	acts := NewNutritionActivities(memRepo, aiParser, logger)
 
 	// Case 1: Empty image data
-	_, err := acts.AnalyzeMealImage(ctx, nil, "image/jpeg")
+	_, err := acts.AnalyzeMealImage(ctx, nil, "image/jpeg", "healthy dinner")
 	if err == nil {
 		t.Error("expected error for empty image data")
 	}
 
 	// Case 2: Valid image data
-	items, err := acts.AnalyzeMealImage(ctx, []byte("fake-image-bytes"), "image/jpeg")
+	items, err := acts.AnalyzeMealImage(ctx, []byte("fake-image-bytes"), "image/jpeg", "healthy dinner")
 	if err != nil {
 		t.Fatalf("unexpected error analyzing image: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestAnalyzeMealImage(t *testing.T) {
 	// Case 3: AI parser error
 	failingParser := &mockFailingParser{}
 	errActs := NewNutritionActivities(memRepo, failingParser, logger)
-	_, err = errActs.AnalyzeMealImage(ctx, []byte("fake-bytes"), "image/png")
+	_, err = errActs.AnalyzeMealImage(ctx, []byte("fake-bytes"), "image/png", "healthy dinner")
 	if err == nil {
 		t.Error("expected error when AI parser fails")
 	}
@@ -108,7 +108,7 @@ func TestAnalyzeMealImage(t *testing.T) {
 
 type mockFailingParser struct{}
 
-func (m *mockFailingParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string) ([]core.MealItem, error) {
+func (m *mockFailingParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]core.MealItem, error) {
 	return nil, errors.New("ai model timeout")
 }
 

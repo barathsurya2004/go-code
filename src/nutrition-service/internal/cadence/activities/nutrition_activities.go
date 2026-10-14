@@ -45,11 +45,11 @@ func (a *NutritionActivities) UpdateJobStatus(ctx context.Context, jobID, userUU
 }
 
 // AnalyzeMealImage invokes the Vision AI engine to parse portions, nutrients, and dishes.
-func (a *NutritionActivities) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string) ([]core.MealItem, error) {
+func (a *NutritionActivities) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType, notes string) ([]core.MealItem, error) {
 	if len(imageData) == 0 {
 		return nil, fmt.Errorf("empty image data received")
 	}
-	items, err := a.aiParser.AnalyzeMealImage(ctx, imageData, mimeType)
+	items, err := a.aiParser.AnalyzeMealImage(ctx, imageData, mimeType, notes)
 	if err != nil {
 		a.log.Error("Cadence activity: AI vision parsing failed", zap.Error(err))
 		return nil, err

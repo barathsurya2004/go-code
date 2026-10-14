@@ -80,7 +80,7 @@ type NutritionRepository interface {
 }
 
 type AIParser interface {
-	AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string) ([]MealItem, error)
+	AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]MealItem, error)
 }
 
 type ImageQueueWorker interface {

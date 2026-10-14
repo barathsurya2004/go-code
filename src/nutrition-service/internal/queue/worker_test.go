@@ -16,7 +16,7 @@ import (
 
 type failingParser struct{}
 
-func (f *failingParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string) ([]core.MealItem, error) {
+func (f *failingParser) AnalyzeMealImage(ctx context.Context, imageData []byte, mimeType string, notes ...string) ([]core.MealItem, error) {
 	return nil, fmt.Errorf("simulated AI parsing error")
 }
 

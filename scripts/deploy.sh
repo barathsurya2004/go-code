@@ -29,16 +29,18 @@ echo "Pulling latest code in $REPO_DIR..."
 git fetch origin main
 git reset --hard origin/main
 
-# 3. Load environment variables from penne-service .env
+# 3. Load environment variables from service-wise .env files
 if [ -f "$REPO_DIR/src/penne-service/.env" ]; then
   echo "Loading environment from $REPO_DIR/src/penne-service/.env..."
   set -a
   source "$REPO_DIR/src/penne-service/.env"
   set +a
-elif [ -f "$REPO_DIR/.env" ]; then
-  echo "Loading environment from $REPO_DIR/.env..."
+fi
+
+if [ -f "$REPO_DIR/src/nutrition-service/.env" ]; then
+  echo "Loading environment from $REPO_DIR/src/nutrition-service/.env..."
   set -a
-  source "$REPO_DIR/.env"
+  source "$REPO_DIR/src/nutrition-service/.env"
   set +a
 fi
 

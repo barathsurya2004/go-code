@@ -367,8 +367,8 @@ func (h *GatewayHandler) UploadMealImage(w http.ResponseWriter, r *http.Request)
 
 	var imageData []byte
 	var mimeType string
-	mealType := r.FormValue("meal_type")
-	notes := r.FormValue("notes")
+	var mealType string
+	var notes string
 
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
@@ -376,6 +376,8 @@ func (h *GatewayHandler) UploadMealImage(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		mealType = r.FormValue("meal_type")
+		notes = r.FormValue("notes")
 		file, header, err := r.FormFile("image")
 		if err != nil {
 			file, header, err = r.FormFile("file")

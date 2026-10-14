@@ -76,6 +76,9 @@ services:
       - "50052:50052"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - path: src/nutrition-service/.env
+        required: false
     environment:
       GRPC_PORT: "50052"
       DATABASE_URL: "postgres://postgres:postgres@db:5432/nouri_db?sslmode=disable"
