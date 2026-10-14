@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/barathsurya2004/go-code/pkg/grpcclient"
+	nutritionv1 "github.com/barathsurya2004/go-code/pkg/proto/nutritionv1"
 	pennev1 "github.com/barathsurya2004/go-code/pkg/proto/pennev1"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -23,14 +25,31 @@ import (
 )
 
 type GatewayHandler struct {
-	penneClient pennev1.PenneServiceClient
-	log         *zap.Logger
+	penneClient     pennev1.PenneServiceClient
+	nutritionClient nutritionv1.NutritionServiceClient
+	log             *zap.Logger
+}
+
+type GatewayHandlerParams struct {
+	fx.In
+	PenneClient     pennev1.PenneServiceClient
+	Log             *zap.Logger
+	NutritionClient nutritionv1.NutritionServiceClient `optional:"true"`
+}
+
+func NewGatewayHandlerFX(p GatewayHandlerParams) *GatewayHandler {
+	return NewGatewayHandlerWithNutrition(p.PenneClient, p.NutritionClient, p.Log)
 }
 
 func NewGatewayHandler(penneClient pennev1.PenneServiceClient, log *zap.Logger) *GatewayHandler {
+	return NewGatewayHandlerWithNutrition(penneClient, nil, log)
+}
+
+func NewGatewayHandlerWithNutrition(penneClient pennev1.PenneServiceClient, nutritionClient nutritionv1.NutritionServiceClient, log *zap.Logger) *GatewayHandler {
 	return &GatewayHandler{
-		penneClient: penneClient,
-		log:         log,
+		penneClient:     penneClient,
+		nutritionClient: nutritionClient,
+		log:             log,
 	}
 }
 
@@ -308,6 +327,17 @@ func NewRouter(handler *GatewayHandler, cfg *Config) *mux.Router {
 	r.HandleFunc(prefix+"/envelope", handler.GetEnvelope).Methods(http.MethodGet)
 	r.HandleFunc(prefix+"/envelopes", handler.GetEnvelopesByUser).Methods(http.MethodGet)
 
+	// Nutrition routes
+	r.HandleFunc(prefix+"/nutrition/upload", handler.UploadMealImage).Methods(http.MethodPost)
+	r.HandleFunc(prefix+"/nutrition/jobs/{id}", handler.GetNutritionJob).Methods(http.MethodGet)
+	r.HandleFunc(prefix+"/nutrition/daily", handler.GetDailyNutrition).Methods(http.MethodGet)
+	r.HandleFunc(prefix+"/nutrition/goals", handler.GetNutritionGoals).Methods(http.MethodGet)
+	r.HandleFunc(prefix+"/nutrition/goals", handler.SetNutritionGoals).Methods(http.MethodPost)
+	r.HandleFunc(prefix+"/nutrition/meals", handler.AddManualNutritionMeal).Methods(http.MethodPost)
+	r.HandleFunc(prefix+"/nutrition/meals/{id}", handler.DeleteNutritionMeal).Methods(http.MethodDelete)
+	r.HandleFunc(prefix+"/nutrition/items/{id}", handler.UpdateNutritionItem).Methods(http.MethodPut)
+	r.HandleFunc(prefix+"/nutrition/items/{id}", handler.DeleteNutritionItem).Methods(http.MethodDelete)
+
 	// Fallback reverse proxy for legacy/unmigrated endpoints (/auth/*, /envelope-groups, /allocations/*, etc.)
 	if cfg != nil && cfg.PenneHTTPTarget != "" {
 		targetURL, err := url.Parse(cfg.PenneHTTPTarget)
@@ -327,6 +357,290 @@ func NewRouter(handler *GatewayHandler, cfg *Config) *mux.Router {
 	}
 
 	return r
+}
+
+func (h *GatewayHandler) UploadMealImage(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var imageData []byte
+	var mimeType string
+	mealType := r.FormValue("meal_type")
+	notes := r.FormValue("notes")
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			file, header, err = r.FormFile("file")
+		}
+		if err != nil {
+			http.Error(w, "image file missing in form field 'image' or 'file'", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		mimeType = header.Header.Get("Content-Type")
+		if mimeType == "" {
+			mimeType = "image/jpeg"
+		}
+		data, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "failed to read image file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		imageData = data
+	} else if strings.HasPrefix(contentType, "image/") {
+		mimeType = contentType
+		data, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+		if err != nil {
+			http.Error(w, "failed to read image body: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		imageData = data
+	} else {
+		http.Error(w, "invalid content-type, expected multipart/form-data or image/*", http.StatusBadRequest)
+		return
+	}
+
+	if len(imageData) == 0 {
+		http.Error(w, "image data cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.nutritionClient.ProcessImage(r.Context(), &nutritionv1.ProcessImageRequest{
+		ImageData: imageData,
+		MimeType:  mimeType,
+		MealType:  mealType,
+		Notes:     notes,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (h *GatewayHandler) GetNutritionJob(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	jobID := mux.Vars(r)["id"]
+	resp, err := h.nutritionClient.GetJobStatus(r.Context(), &nutritionv1.GetJobStatusRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) GetDailyNutrition(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	resp, err := h.nutritionClient.GetDailyLog(r.Context(), &nutritionv1.GetDailyLogRequest{
+		Date: date,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) GetNutritionGoals(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	resp, err := h.nutritionClient.GetGoals(r.Context(), &nutritionv1.GetGoalsRequest{})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) SetNutritionGoals(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		CaloriesTarget float64 `json:"calories_target"`
+		ProteinGrams   float64 `json:"protein_grams"`
+		CarbsGrams     float64 `json:"carbs_grams"`
+		FatGrams       float64 `json:"fat_grams"`
+		FiberGrams     float64 `json:"fiber_grams"`
+		SodiumMg       float64 `json:"sodium_mg"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	resp, err := h.nutritionClient.SetGoals(r.Context(), &nutritionv1.SetGoalsRequest{
+		Goals: &nutritionv1.NutritionGoals{
+			CaloriesTarget: body.CaloriesTarget,
+			ProteinGrams:   body.ProteinGrams,
+			CarbsGrams:     body.CarbsGrams,
+			FatGrams:       body.FatGrams,
+			FiberGrams:     body.FiberGrams,
+			SodiumMg:       body.SodiumMg,
+		},
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) AddManualNutritionMeal(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		MealType string `json:"meal_type"`
+		LoggedAt string `json:"logged_at"`
+		Notes    string `json:"notes"`
+		Items    []struct {
+			Name                 string   `json:"name"`
+			EstimatedWeightGrams float64  `json:"estimated_weight_grams"`
+			Calories             float64  `json:"calories"`
+			ProteinGrams         float64  `json:"protein_grams"`
+			CarbsGrams           float64  `json:"carbs_grams"`
+			FatGrams             float64  `json:"fat_grams"`
+			FiberGrams           float64  `json:"fiber_grams"`
+			SodiumMg             float64  `json:"sodium_mg"`
+			Ingredients          []string `json:"ingredients"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var protoItems []*nutritionv1.MealItem
+	for _, it := range body.Items {
+		protoItems = append(protoItems, &nutritionv1.MealItem{
+			Name:                 it.Name,
+			EstimatedWeightGrams: it.EstimatedWeightGrams,
+			Calories:             it.Calories,
+			ProteinGrams:         it.ProteinGrams,
+			CarbsGrams:           it.CarbsGrams,
+			FatGrams:             it.FatGrams,
+			FiberGrams:           it.FiberGrams,
+			SodiumMg:             it.SodiumMg,
+			Ingredients:          it.Ingredients,
+		})
+	}
+
+	resp, err := h.nutritionClient.AddManualMeal(r.Context(), &nutritionv1.AddManualMealRequest{
+		MealType: body.MealType,
+		LoggedAt: body.LoggedAt,
+		Notes:    body.Notes,
+		Items:    protoItems,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *GatewayHandler) DeleteNutritionMeal(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	mealID := mux.Vars(r)["id"]
+	resp, err := h.nutritionClient.DeleteMealLog(r.Context(), &nutritionv1.DeleteMealLogRequest{
+		MealLogId: mealID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) UpdateNutritionItem(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	itemID := mux.Vars(r)["id"]
+	var body struct {
+		Name                 string  `json:"name"`
+		EstimatedWeightGrams float64 `json:"estimated_weight_grams"`
+		Calories             float64 `json:"calories"`
+		ProteinGrams         float64 `json:"protein_grams"`
+		CarbsGrams           float64 `json:"carbs_grams"`
+		FatGrams             float64 `json:"fat_grams"`
+		FiberGrams           float64 `json:"fiber_grams"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.nutritionClient.UpdateMealItem(r.Context(), &nutritionv1.UpdateMealItemRequest{
+		ItemId:               itemID,
+		Name:                 body.Name,
+		EstimatedWeightGrams: body.EstimatedWeightGrams,
+		Calories:             body.Calories,
+		ProteinGrams:         body.ProteinGrams,
+		CarbsGrams:           body.CarbsGrams,
+		FatGrams:             body.FatGrams,
+		FiberGrams:           body.FiberGrams,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *GatewayHandler) DeleteNutritionItem(w http.ResponseWriter, r *http.Request) {
+	if h.nutritionClient == nil {
+		http.Error(w, "nutrition service is not available", http.StatusServiceUnavailable)
+		return
+	}
+	itemID := mux.Vars(r)["id"]
+	resp, err := h.nutritionClient.DeleteMealItem(r.Context(), &nutritionv1.DeleteMealItemRequest{
+		ItemId: itemID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func NewNutritionClient(cfg *Config) (nutritionv1.NutritionServiceClient, error) {
+	target := cfg.NutritionServiceTarget
+	if target == "" {
+		target = "127.0.0.1:50052"
+	}
+	pool, err := grpcclient.NewClientPool(grpcclient.PoolConfig{
+		Target: target,
+		Size:   4,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to nutrition-service pool: %w", err)
+	}
+	return nutritionv1.NewNutritionServiceClient(pool.Get()), nil
 }
 
 func NewPenneClient(cfg *Config) (pennev1.PenneServiceClient, *grpcclient.ClientPool, error) {

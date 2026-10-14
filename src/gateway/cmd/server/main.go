@@ -11,7 +11,8 @@ func main() {
 		fx.Provide(
 			NewConfig,
 			NewPenneClient,
-			NewGatewayHandler,
+			NewNutritionClient,
+			NewGatewayHandlerFX,
 			NewRouter,
 		),
 		fx.Invoke(StartServer),

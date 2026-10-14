@@ -53,8 +53,23 @@ case "$SERVICE_NAME" in
     docker compose up -d --build gateway
     ;;
   all|"")
+    echo "Starting database service..."
+    docker compose up -d db
+    sleep 2
+    # Ensure dedicated database exists for nouri/nutrition-service
+    docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
+    docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
     echo "Rebuilding and deploying entire backend stack..."
     docker compose up -d --build
+    ;;
+  nutrition-service)
+    echo "Starting database service..."
+    docker compose up -d db
+    sleep 2
+    docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
+    docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
+    echo "Rebuilding and restarting nutrition-service..."
+    docker compose up -d --build nutrition-service
     ;;
   *)
     echo "Deploying target service: $SERVICE_NAME..."

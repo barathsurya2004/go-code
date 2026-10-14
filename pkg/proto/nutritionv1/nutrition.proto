@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package nutrition.v1;
+
+option go_package = "github.com/barathsurya2004/go-code/pkg/proto/nutritionv1;nutritionv1";
+
+// Health check
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string service_name = 2;
+  int64 timestamp = 3;
+}
+
+// Nutrition Goals
+message NutritionGoals {
+  string user_uuid = 1;
+  double calories_target = 2;
+  double protein_grams = 3;
+  double carbs_grams = 4;
+  double fat_grams = 5;
+  double fiber_grams = 6;
+  double sodium_mg = 7;
+}
+
+message GetGoalsRequest {
+  string user_uuid = 1;
+}
+
+message SetGoalsRequest {
+  NutritionGoals goals = 1;
+}
+
+// Meal Items & Logs
+message MealItem {
+  string id = 1;
+  string meal_log_id = 2;
+  string name = 3;
+  double estimated_weight_grams = 4;
+  double calories = 5;
+  double protein_grams = 6;
+  double carbs_grams = 7;
+  double fat_grams = 8;
+  double fiber_grams = 9;
+  double sodium_mg = 10;
+  double confidence_score = 11;
+  repeated string ingredients = 12;
+}
+
+message MealLog {
+  string id = 1;
+  string user_uuid = 2;
+  string meal_type = 3; // breakfast, lunch, dinner, snack
+  string logged_at = 4;  // RFC3339
+  string notes = 5;
+  repeated MealItem items = 6;
+  double total_calories = 7;
+  double total_protein = 8;
+  double total_carbs = 9;
+  double total_fat = 10;
+}
+
+message DailyNutritionSummary {
+  string date = 1; // YYYY-MM-DD
+  double total_calories = 2;
+  double total_protein = 3;
+  double total_carbs = 4;
+  double total_fat = 5;
+  double total_fiber = 6;
+  double total_sodium = 7;
+  NutritionGoals goals = 8;
+  repeated MealLog meals = 9;
+}
+
+message GetDailyLogRequest {
+  string user_uuid = 1;
+  string date = 2; // YYYY-MM-DD
+}
+
+// Queue & Image Processing
+message ProcessImageRequest {
+  string user_uuid = 1;
+  bytes image_data = 2;
+  string mime_type = 3;
+  string meal_type = 4;
+  string notes = 5;
+}
+
+message JobStatus {
+  string job_id = 1;
+  string user_uuid = 2;
+  string status = 3; // PENDING, PROCESSING, COMPLETED, FAILED
+  string error_message = 4;
+  string meal_log_id = 5;
+  string created_at = 6;
+  string updated_at = 7;
+  repeated MealItem detected_items = 8;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+  string user_uuid = 2;
+}
+
+// Manual additions and modifications
+message AddManualMealRequest {
+  string user_uuid = 1;
+  string meal_type = 2;
+  string logged_at = 3;
+  string notes = 4;
+  repeated MealItem items = 5;
+}
+
+message UpdateMealItemRequest {
+  string item_id = 1;
+  string user_uuid = 2;
+  string name = 3;
+  double estimated_weight_grams = 4;
+  double calories = 5;
+  double protein_grams = 6;
+  double carbs_grams = 7;
+  double fat_grams = 8;
+  double fiber_grams = 9;
+}
+
+message DeleteMealLogRequest {
+  string meal_log_id = 1;
+  string user_uuid = 2;
+}
+
+message DeleteMealItemRequest {
+  string item_id = 1;
+  string user_uuid = 2;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+service NutritionService {
+  rpc CheckHealth(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Goals
+  rpc GetGoals(GetGoalsRequest) returns (NutritionGoals);
+  rpc SetGoals(SetGoalsRequest) returns (NutritionGoals);
+
+  // Daily Logging
+  rpc GetDailyLog(GetDailyLogRequest) returns (DailyNutritionSummary);
+  rpc AddManualMeal(AddManualMealRequest) returns (MealLog);
+  rpc DeleteMealLog(DeleteMealLogRequest) returns (DeleteResponse);
+  rpc UpdateMealItem(UpdateMealItemRequest) returns (MealItem);
+  rpc DeleteMealItem(DeleteMealItemRequest) returns (DeleteResponse);
+
+  // Image Queue & Parsing
+  rpc ProcessImage(ProcessImageRequest) returns (JobStatus);
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatus);
+}

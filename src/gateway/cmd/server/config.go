@@ -6,11 +6,12 @@ import (
 )
 
 type Config struct {
-	Port               string
-	PenneServiceTarget string
-	PenneHTTPTarget    string
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
+	Port                   string
+	PenneServiceTarget     string
+	PenneHTTPTarget        string
+	NutritionServiceTarget string
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
 }
 
 func NewConfig() *Config {
@@ -29,11 +30,17 @@ func NewConfig() *Config {
 		penneHTTPTarget = "http://127.0.0.1:8080"
 	}
 
+	nutritionTarget := os.Getenv("NUTRITION_SERVICE_TARGET")
+	if nutritionTarget == "" {
+		nutritionTarget = "127.0.0.1:50052"
+	}
+
 	return &Config{
-		Port:               port,
-		PenneServiceTarget: penneTarget,
-		PenneHTTPTarget:    penneHTTPTarget,
-		ReadTimeout:        15 * time.Second,
-		WriteTimeout:       15 * time.Second,
+		Port:                   port,
+		PenneServiceTarget:     penneTarget,
+		PenneHTTPTarget:        penneHTTPTarget,
+		NutritionServiceTarget: nutritionTarget,
+		ReadTimeout:            15 * time.Second,
+		WriteTimeout:           15 * time.Second,
 	}
 }

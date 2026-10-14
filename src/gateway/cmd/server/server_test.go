@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	nutritionv1 "github.com/barathsurya2004/go-code/pkg/proto/nutritionv1"
 	pennev1 "github.com/barathsurya2004/go-code/pkg/proto/pennev1"
 	"github.com/gorilla/mux"
 	"go.uber.org/fx"
@@ -558,3 +559,184 @@ func TestReverseProxyFallback(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
+
+type mockNutritionServiceClient struct {
+	processImageFn    func(ctx context.Context, in *nutritionv1.ProcessImageRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error)
+	getJobStatusFn    func(ctx context.Context, in *nutritionv1.GetJobStatusRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error)
+	getDailyLogFn     func(ctx context.Context, in *nutritionv1.GetDailyLogRequest, opts ...grpc.CallOption) (*nutritionv1.DailyNutritionSummary, error)
+	getGoalsFn        func(ctx context.Context, in *nutritionv1.GetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error)
+	setGoalsFn        func(ctx context.Context, in *nutritionv1.SetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error)
+	addManualMealFn   func(ctx context.Context, in *nutritionv1.AddManualMealRequest, opts ...grpc.CallOption) (*nutritionv1.MealLog, error)
+	deleteMealLogFn   func(ctx context.Context, in *nutritionv1.DeleteMealLogRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error)
+	updateMealItemFn  func(ctx context.Context, in *nutritionv1.UpdateMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.MealItem, error)
+	deleteMealItemFn  func(ctx context.Context, in *nutritionv1.DeleteMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error)
+}
+
+func (m *mockNutritionServiceClient) CheckHealth(ctx context.Context, in *nutritionv1.HealthCheckRequest, opts ...grpc.CallOption) (*nutritionv1.HealthCheckResponse, error) {
+	return &nutritionv1.HealthCheckResponse{Status: "SERVING"}, nil
+}
+func (m *mockNutritionServiceClient) ProcessImage(ctx context.Context, in *nutritionv1.ProcessImageRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error) {
+	if m.processImageFn != nil {
+		return m.processImageFn(ctx, in, opts...)
+	}
+	return &nutritionv1.JobStatus{JobId: "job-1", Status: "PENDING"}, nil
+}
+func (m *mockNutritionServiceClient) GetJobStatus(ctx context.Context, in *nutritionv1.GetJobStatusRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error) {
+	if m.getJobStatusFn != nil {
+		return m.getJobStatusFn(ctx, in, opts...)
+	}
+	return &nutritionv1.JobStatus{JobId: in.GetJobId(), Status: "COMPLETED"}, nil
+}
+func (m *mockNutritionServiceClient) GetDailyLog(ctx context.Context, in *nutritionv1.GetDailyLogRequest, opts ...grpc.CallOption) (*nutritionv1.DailyNutritionSummary, error) {
+	if m.getDailyLogFn != nil {
+		return m.getDailyLogFn(ctx, in, opts...)
+	}
+	return &nutritionv1.DailyNutritionSummary{Date: in.GetDate(), TotalCalories: 1500}, nil
+}
+func (m *mockNutritionServiceClient) GetGoals(ctx context.Context, in *nutritionv1.GetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error) {
+	if m.getGoalsFn != nil {
+		return m.getGoalsFn(ctx, in, opts...)
+	}
+	return &nutritionv1.NutritionGoals{CaloriesTarget: 2200}, nil
+}
+func (m *mockNutritionServiceClient) SetGoals(ctx context.Context, in *nutritionv1.SetGoalsRequest, opts ...grpc.CallOption) (*nutritionv1.NutritionGoals, error) {
+	if m.setGoalsFn != nil {
+		return m.setGoalsFn(ctx, in, opts...)
+	}
+	return in.GetGoals(), nil
+}
+func (m *mockNutritionServiceClient) AddManualMeal(ctx context.Context, in *nutritionv1.AddManualMealRequest, opts ...grpc.CallOption) (*nutritionv1.MealLog, error) {
+	if m.addManualMealFn != nil {
+		return m.addManualMealFn(ctx, in, opts...)
+	}
+	return &nutritionv1.MealLog{Id: "meal-1", TotalCalories: 500}, nil
+}
+func (m *mockNutritionServiceClient) DeleteMealLog(ctx context.Context, in *nutritionv1.DeleteMealLogRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error) {
+	if m.deleteMealLogFn != nil {
+		return m.deleteMealLogFn(ctx, in, opts...)
+	}
+	return &nutritionv1.DeleteResponse{Success: true}, nil
+}
+func (m *mockNutritionServiceClient) UpdateMealItem(ctx context.Context, in *nutritionv1.UpdateMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.MealItem, error) {
+	if m.updateMealItemFn != nil {
+		return m.updateMealItemFn(ctx, in, opts...)
+	}
+	return &nutritionv1.MealItem{Id: in.GetItemId(), Calories: in.GetCalories()}, nil
+}
+func (m *mockNutritionServiceClient) DeleteMealItem(ctx context.Context, in *nutritionv1.DeleteMealItemRequest, opts ...grpc.CallOption) (*nutritionv1.DeleteResponse, error) {
+	if m.deleteMealItemFn != nil {
+		return m.deleteMealItemFn(ctx, in, opts...)
+	}
+	return &nutritionv1.DeleteResponse{Success: true}, nil
+}
+
+func TestNutritionEndpoints(t *testing.T) {
+	penneClient := &mockPenneServiceClient{}
+	nutriClient := &mockNutritionServiceClient{}
+	h := NewGatewayHandlerWithNutrition(penneClient, nutriClient, zap.NewNop())
+	router := NewRouter(h, &Config{})
+
+	// 1. Upload meal image with direct binary (clipboard paste)
+	reqImg := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("png-binary")))
+	reqImg.Header.Set("Content-Type", "image/png")
+	recImg := httptest.NewRecorder()
+	router.ServeHTTP(recImg, reqImg)
+	if recImg.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", recImg.Code, recImg.Body.String())
+	}
+
+	// 2. Upload with invalid content type
+	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/upload", bytes.NewReader([]byte("text")))
+	reqBad.Header.Set("Content-Type", "text/plain")
+	recBad := httptest.NewRecorder()
+	router.ServeHTTP(recBad, reqBad)
+	if recBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", recBad.Code)
+	}
+
+	// 3. Get job status
+	reqJob := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/jobs/job-1", nil)
+	recJob := httptest.NewRecorder()
+	router.ServeHTTP(recJob, reqJob)
+	if recJob.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recJob.Code)
+	}
+
+	// 4. Get daily nutrition
+	reqDaily := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/daily?date=2026-10-13", nil)
+	recDaily := httptest.NewRecorder()
+	router.ServeHTTP(recDaily, reqDaily)
+	if recDaily.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recDaily.Code)
+	}
+
+	// 5. Goals GET and POST
+	reqGetGoals := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/goals", nil)
+	recGetGoals := httptest.NewRecorder()
+	router.ServeHTTP(recGetGoals, reqGetGoals)
+	if recGetGoals.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recGetGoals.Code)
+	}
+
+	goalsBody, _ := json.Marshal(map[string]interface{}{
+		"calories_target": 2400,
+		"protein_grams":   180,
+	})
+	reqSetGoals := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/goals", bytes.NewReader(goalsBody))
+	recSetGoals := httptest.NewRecorder()
+	router.ServeHTTP(recSetGoals, reqSetGoals)
+	if recSetGoals.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recSetGoals.Code)
+	}
+
+	// 6. Manual meal POST and DELETE
+	mealBody, _ := json.Marshal(map[string]interface{}{
+		"meal_type": "lunch",
+		"items": []map[string]interface{}{
+			{"name": "Steak", "calories": 400, "protein_grams": 45},
+		},
+	})
+	reqMeal := httptest.NewRequest(http.MethodPost, "/api/v1/nutrition/meals", bytes.NewReader(mealBody))
+	recMeal := httptest.NewRecorder()
+	router.ServeHTTP(recMeal, reqMeal)
+	if recMeal.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d", recMeal.Code)
+	}
+
+	reqDelMeal := httptest.NewRequest(http.MethodDelete, "/api/v1/nutrition/meals/meal-1", nil)
+	recDelMeal := httptest.NewRecorder()
+	router.ServeHTTP(recDelMeal, reqDelMeal)
+	if recDelMeal.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recDelMeal.Code)
+	}
+
+	// 7. Meal item PUT and DELETE
+	itemBody, _ := json.Marshal(map[string]interface{}{
+		"name":     "Updated Steak",
+		"calories": 450,
+	})
+	reqItem := httptest.NewRequest(http.MethodPut, "/api/v1/nutrition/items/item-1", bytes.NewReader(itemBody))
+	recItem := httptest.NewRecorder()
+	router.ServeHTTP(recItem, reqItem)
+	if recItem.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recItem.Code)
+	}
+
+	reqDelItem := httptest.NewRequest(http.MethodDelete, "/api/v1/nutrition/items/item-1", nil)
+	recDelItem := httptest.NewRecorder()
+	router.ServeHTTP(recDelItem, reqDelItem)
+	if recDelItem.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", recDelItem.Code)
+	}
+
+	// 8. Test nil nutrition client returns 503
+	hNil := NewGatewayHandler(penneClient, zap.NewNop())
+	rNil := NewRouter(hNil, &Config{})
+	reqNil := httptest.NewRequest(http.MethodGet, "/api/v1/nutrition/goals", nil)
+	recNil := httptest.NewRecorder()
+	rNil.ServeHTTP(recNil, reqNil)
+	if recNil.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when nutritionClient is nil, got %d", recNil.Code)
+	}
+}
+

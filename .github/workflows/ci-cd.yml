@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           check-latest: true
           cache: true # Ensures Go modules are cached between runs
 
@@ -55,6 +55,11 @@ jobs:
           echo "Penne-service coverage is ${COVERAGE}%"
           awk -v cov="$COVERAGE" 'BEGIN { if (cov < 95.0) { print "Coverage below 95%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
 
+      - name: Test nutrition-service module
+        run: |
+          cd src/nutrition-service
+          go test -v -coverprofile=coverage.out ./...
+
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -63,6 +68,7 @@ jobs:
             pkg/coverage.out
             src/gateway/coverage.out
             src/penne-service/coverage.out
+            src/nutrition-service/coverage.out
 
   deploy:
     name: Deploy to Server
