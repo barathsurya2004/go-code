@@ -22,6 +22,7 @@ services:
     build:
       context: .
       dockerfile: src/penne-service/Dockerfile
+    image: penne-service:latest
     container_name: penne_service
     restart: unless-stopped
     expose:
@@ -44,9 +45,7 @@ services:
         required: false
 
   cadence-worker:
-    build:
-      context: .
-      dockerfile: src/penne-service/Dockerfile
+    image: penne-service:latest
     container_name: penne_cadence_worker
     restart: unless-stopped
     command: ["./cadence-worker"]
@@ -58,6 +57,8 @@ services:
     environment:
       CADENCE_HOST_PORT: "${CADENCE_HOST_PORT:-host.docker.internal:7933}"
     depends_on:
+      penne-service:
+        condition: service_started
       db:
         condition: service_healthy
         required: false
@@ -66,6 +67,7 @@ services:
     build:
       context: .
       dockerfile: src/nutrition-service/Dockerfile
+    image: nutrition-service:latest
     container_name: nutrition_service
     restart: unless-stopped
     expose:
@@ -87,6 +89,7 @@ services:
     build:
       context: .
       dockerfile: src/gateway/Dockerfile
+    image: gateway:latest
     container_name: gateway
     restart: unless-stopped
     ports:

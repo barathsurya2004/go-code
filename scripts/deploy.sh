@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Enable BuildKit for fast compilation and cache mounts
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 SERVICE_NAME=${1:-"all"}
 
 echo "================================================="
@@ -42,15 +46,18 @@ fi
 case "$SERVICE_NAME" in
   penne-service)
     echo "Rebuilding and restarting penne-service..."
-    docker compose up -d --build penne-service
+    docker compose build penne-service
+    docker compose up -d penne-service cadence-worker
     ;;
   cadence-penne-service|cadence-worker)
     echo "Rebuilding and restarting cadence-worker..."
-    docker compose up -d --build cadence-worker
+    docker compose build penne-service
+    docker compose up -d cadence-worker
     ;;
   gateway)
     echo "Rebuilding and restarting gateway..."
-    docker compose up -d --build gateway
+    docker compose build gateway
+    docker compose up -d gateway
     ;;
   all|"")
     echo "Starting database service..."
@@ -59,8 +66,12 @@ case "$SERVICE_NAME" in
     # Ensure dedicated database exists for nouri/nutrition-service
     docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
     docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
-    echo "Rebuilding and deploying entire backend stack..."
-    docker compose up -d --build
+    echo "Rebuilding backend services (penne-service, nutrition-service, gateway)..."
+    docker compose build penne-service
+    docker compose build nutrition-service
+    docker compose build gateway
+    echo "Deploying entire backend stack..."
+    docker compose up -d
     ;;
   nutrition-service)
     echo "Starting database service..."
@@ -69,7 +80,8 @@ case "$SERVICE_NAME" in
     docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
     docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
     echo "Rebuilding and restarting nutrition-service..."
-    docker compose up -d --build nutrition-service
+    docker compose build nutrition-service
+    docker compose up -d nutrition-service
     ;;
   *)
     echo "Deploying target service: $SERVICE_NAME..."
