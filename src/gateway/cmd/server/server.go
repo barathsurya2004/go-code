@@ -372,7 +372,7 @@ func (h *GatewayHandler) UploadMealImage(w http.ResponseWriter, r *http.Request)
 
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(10 << 20); err != nil {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -399,7 +399,7 @@ func (h *GatewayHandler) UploadMealImage(w http.ResponseWriter, r *http.Request)
 		imageData = data
 	} else if strings.HasPrefix(contentType, "image/") {
 		mimeType = contentType
-		data, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+		data, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
 		if err != nil {
 			http.Error(w, "failed to read image body: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -638,6 +638,12 @@ func NewNutritionClient(cfg *Config) (nutritionv1.NutritionServiceClient, error)
 	pool, err := grpcclient.NewClientPool(grpcclient.PoolConfig{
 		Target: target,
 		Size:   4,
+		DialOptions: []grpc.DialOption{
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(32 * 1024 * 1024),
+				grpc.MaxCallSendMsgSize(32 * 1024 * 1024),
+			),
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nutrition-service pool: %w", err)

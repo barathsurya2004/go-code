@@ -384,6 +384,8 @@ func StartGRPCServer(
 	}
 
 	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(32*1024*1024),
+		grpc.MaxSendMsgSize(32*1024*1024),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             5 * time.Second,
 			PermitWithoutStream: true,
