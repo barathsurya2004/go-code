@@ -590,6 +590,28 @@ func TestReverseProxyFallback(t *testing.T) {
 	}
 }
 
+func TestPulseProxyForwarding(t *testing.T) {
+	pulseBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok","message":"pulse proxy received"}`))
+	}))
+	defer pulseBackend.Close()
+
+	cfg := &Config{PulseHTTPTarget: pulseBackend.URL}
+	client := &mockPenneServiceClient{}
+	h := NewGatewayHandler(client, zap.NewNop())
+	router := NewRouter(h, cfg)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/sync", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
 type mockNutritionServiceClient struct {
 	processImageFn    func(ctx context.Context, in *nutritionv1.ProcessImageRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error)
 	getJobStatusFn    func(ctx context.Context, in *nutritionv1.GetJobStatusRequest, opts ...grpc.CallOption) (*nutritionv1.JobStatus, error)

@@ -338,6 +338,22 @@ func NewRouter(handler *GatewayHandler, cfg *Config) *mux.Router {
 	r.HandleFunc(prefix+"/nutrition/items/{id}", handler.UpdateNutritionItem).Methods(http.MethodPut)
 	r.HandleFunc(prefix+"/nutrition/items/{id}", handler.DeleteNutritionItem).Methods(http.MethodDelete)
 
+	// Pulse service routes forwarding
+	if cfg != nil && cfg.PulseHTTPTarget != "" {
+		targetURL, err := url.Parse(cfg.PulseHTTPTarget)
+		if err == nil && targetURL.Host != "" {
+			pulseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+			pulseProxy.ModifyResponse = func(resp *http.Response) error {
+				resp.Header.Del("Access-Control-Allow-Origin")
+				resp.Header.Del("Access-Control-Allow-Methods")
+				resp.Header.Del("Access-Control-Allow-Headers")
+				resp.Header.Del("Access-Control-Allow-Credentials")
+				return nil
+			}
+			r.PathPrefix(prefix + "/pulse").Handler(pulseProxy)
+		}
+	}
+
 	// Fallback reverse proxy for legacy/unmigrated endpoints (/auth/*, /envelope-groups, /allocations/*, etc.)
 	if cfg != nil && cfg.PenneHTTPTarget != "" {
 		targetURL, err := url.Parse(cfg.PenneHTTPTarget)

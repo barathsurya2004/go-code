@@ -10,6 +10,7 @@ type Config struct {
 	PenneServiceTarget     string
 	PenneHTTPTarget        string
 	NutritionServiceTarget string
+	PulseHTTPTarget        string
 	ReadTimeout            time.Duration
 	WriteTimeout           time.Duration
 }
@@ -35,11 +36,17 @@ func NewConfig() *Config {
 		nutritionTarget = "127.0.0.1:50052"
 	}
 
+	pulseHTTPTarget := os.Getenv("PULSE_HTTP_TARGET")
+	if pulseHTTPTarget == "" {
+		pulseHTTPTarget = "http://127.0.0.1:8082"
+	}
+
 	return &Config{
 		Port:                   port,
 		PenneServiceTarget:     penneTarget,
 		PenneHTTPTarget:        penneHTTPTarget,
 		NutritionServiceTarget: nutritionTarget,
+		PulseHTTPTarget:        pulseHTTPTarget,
 		ReadTimeout:            15 * time.Second,
 		WriteTimeout:           15 * time.Second,
 	}

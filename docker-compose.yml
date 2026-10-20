@@ -108,6 +108,29 @@ services:
       db:
         condition: service_healthy
 
+  pulse-service:
+    build:
+      context: .
+      dockerfile: src/pulse-service/Dockerfile
+    image: pulse-service:latest
+    container_name: pulse_service
+    restart: unless-stopped
+    expose:
+      - "8082" # Internal HTTP port
+    ports:
+      - "8082:8082"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: src/pulse-service/.env
+        required: false
+    environment:
+      PORT: "8082"
+      DATABASE_URL: "postgres://postgres:postgres@db:5432/pulse_app?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+
   gateway:
     build:
       context: .
@@ -122,9 +145,11 @@ services:
       PENNE_SERVICE_TARGET: "penne_service:50051"
       PENNE_HTTP_TARGET: "http://penne_service:8080"
       NUTRITION_SERVICE_TARGET: "nutrition_service:50052"
+      PULSE_HTTP_TARGET: "http://pulse_service:8082"
     depends_on:
       - penne-service
       - nutrition-service
+      - pulse-service
 
 volumes:
   pgdata:
