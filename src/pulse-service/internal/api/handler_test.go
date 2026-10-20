@@ -347,6 +347,12 @@ func TestPulseHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
+		// By query param
+		reqQuery := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user?user_uuid=u-123", nil)
+		recQuery := httptest.NewRecorder()
+		router.ServeHTTP(recQuery, reqQuery)
+		assert.Equal(t, http.StatusOK, recQuery.Code)
+
 		// Unknown token fallback profile
 		reqUnknown := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user", nil)
 		reqUnknown.Header.Set("Authorization", "Bearer unknown-token-456")
@@ -364,7 +370,128 @@ func TestPulseHandler(t *testing.T) {
 		req.Header.Set("x-user-uuid", "athlete@pulse.test")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-
 		assert.Equal(t, http.StatusOK, rec.Code)
+
+		// Authorization header
+		reqBearer := httptest.NewRequest(http.MethodDelete, "/api/v1/pulse/sync", nil)
+		reqBearer.Header.Set("Authorization", "Bearer athlete@pulse.test")
+		recBearer := httptest.NewRecorder()
+		router.ServeHTTP(recBearer, reqBearer)
+		assert.Equal(t, http.StatusOK, recBearer.Code)
+
+		// Query param
+		reqQuery := httptest.NewRequest(http.MethodDelete, "/api/v1/pulse/sync?user_uuid=athlete@pulse.test", nil)
+		recQuery := httptest.NewRecorder()
+		router.ServeHTTP(recQuery, reqQuery)
+		assert.Equal(t, http.StatusOK, recQuery.Code)
+	})
+
+	t.Run("HandleCreateUser error branches", func(t *testing.T) {
+		// Invalid JSON
+		reqBadJSON := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/users", bytes.NewBufferString("invalid json"))
+		recBadJSON := httptest.NewRecorder()
+		router.ServeHTTP(recBadJSON, reqBadJSON)
+		assert.Equal(t, http.StatusBadRequest, recBadJSON.Code)
+
+		// Repo error
+		errRepo := &mockRepo{
+			createUserFn: func(req *core.CreateUserRequest) (*core.PulseUser, error) {
+				return nil, errors.New("db error")
+			},
+		}
+		errHandler := NewPulseHandler(errRepo, log)
+		reqErr := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/users", bytes.NewBufferString(`{"email":"err@pulse.test","name":"Err"}`))
+		recErr := httptest.NewRecorder()
+		errHandler.HandleCreateUser(recErr, reqErr)
+		assert.Equal(t, http.StatusInternalServerError, recErr.Code)
+	})
+
+	t.Run("HandleSignup error branches", func(t *testing.T) {
+		// Invalid JSON
+		reqBadJSON := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/auth/signup", bytes.NewBufferString("invalid json"))
+		recBadJSON := httptest.NewRecorder()
+		router.ServeHTTP(recBadJSON, reqBadJSON)
+		assert.Equal(t, http.StatusBadRequest, recBadJSON.Code)
+
+		// Repo error
+		errRepo := &mockRepo{
+			createUserFn: func(req *core.CreateUserRequest) (*core.PulseUser, error) {
+				return nil, errors.New("db error")
+			},
+		}
+		errHandler := NewPulseHandler(errRepo, log)
+		reqErr := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/auth/signup", bytes.NewBufferString(`{"email":"err@pulse.test","name":"Err"}`))
+		recErr := httptest.NewRecorder()
+		errHandler.HandleSignup(recErr, reqErr)
+		assert.Equal(t, http.StatusInternalServerError, recErr.Code)
+	})
+
+	t.Run("HandleLogin error branches", func(t *testing.T) {
+		// Invalid JSON
+		reqBadJSON := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/auth/login", bytes.NewBufferString("invalid json"))
+		recBadJSON := httptest.NewRecorder()
+		router.ServeHTTP(recBadJSON, reqBadJSON)
+		assert.Equal(t, http.StatusBadRequest, recBadJSON.Code)
+
+		// Missing email
+		reqNoEmail := httptest.NewRequest(http.MethodPost, "/api/v1/pulse/auth/login", bytes.NewBufferString(`{"password":"123"}`))
+		recNoEmail := httptest.NewRecorder()
+		router.ServeHTTP(recNoEmail, reqNoEmail)
+		assert.Equal(t, http.StatusBadRequest, recNoEmail.Code)
+	})
+
+	t.Run("HandleGetUser error branches", func(t *testing.T) {
+		// Missing auth
+		reqNoAuth := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user", nil)
+		recNoAuth := httptest.NewRecorder()
+		router.ServeHTTP(recNoAuth, reqNoAuth)
+		assert.Equal(t, http.StatusUnauthorized, recNoAuth.Code)
+
+		// Authorization: Bearer token
+		reqBearer := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user", nil)
+		reqBearer.Header.Set("Authorization", "Bearer test-bearer-uuid")
+		recBearer := httptest.NewRecorder()
+		router.ServeHTTP(recBearer, reqBearer)
+		assert.Equal(t, http.StatusOK, recBearer.Code)
+
+		// user_uuid query param
+		reqQuery := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user?user_uuid=test-query-uuid", nil)
+		recQuery := httptest.NewRecorder()
+		router.ServeHTTP(recQuery, reqQuery)
+		assert.Equal(t, http.StatusOK, recQuery.Code)
+
+		// Repo error (not ErrUserNotFound)
+		errRepo := &mockRepo{
+			getUserUUIDFn: func(uuid string) (*core.PulseUser, error) {
+				return nil, errors.New("connection broken")
+			},
+		}
+		errHandler := NewPulseHandler(errRepo, log)
+		reqErr := httptest.NewRequest(http.MethodGet, "/api/v1/pulse/user", nil)
+		reqErr.Header.Set("x-user-uuid", "u-broken")
+		recErr := httptest.NewRecorder()
+		errHandler.HandleGetUser(recErr, reqErr)
+		assert.Equal(t, http.StatusInternalServerError, recErr.Code)
+	})
+
+	t.Run("HandleDeleteUserData error branches", func(t *testing.T) {
+		// Missing user_uuid
+		reqNoUser := httptest.NewRequest(http.MethodDelete, "/api/v1/pulse/sync", nil)
+		recNoUser := httptest.NewRecorder()
+		router.ServeHTTP(recNoUser, reqNoUser)
+		assert.Equal(t, http.StatusBadRequest, recNoUser.Code)
+
+		// Repo error
+		errRepo := &mockRepo{
+			deleteFn: func(userUUID string) error {
+				return errors.New("delete failed")
+			},
+		}
+		errHandler := NewPulseHandler(errRepo, log)
+		reqErr := httptest.NewRequest(http.MethodDelete, "/api/v1/pulse/sync", nil)
+		reqErr.Header.Set("x-user-uuid", "u-fail")
+		recErr := httptest.NewRecorder()
+		errHandler.HandleDeleteUserData(recErr, reqErr)
+		assert.Equal(t, http.StatusInternalServerError, recErr.Code)
 	})
 }

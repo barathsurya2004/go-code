@@ -66,12 +66,12 @@ jobs:
           go test -v -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out
 
-      - name: Verify pulse-service Coverage > 90%
+      - name: Verify pulse-service Coverage > 95%
         run: |
           cd src/pulse-service
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Pulse-service coverage is ${COVERAGE}%"
-          awk -v cov="$COVERAGE" 'BEGIN { if (cov < 90.0) { print "Coverage below 90%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
+          awk -v cov="$COVERAGE" 'BEGIN { if (cov < 95.0) { print "Coverage below 95%: " cov "%"; exit 1 } else { print "Coverage threshold met: " cov "%" } }'
 
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@v4

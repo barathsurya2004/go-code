@@ -74,8 +74,10 @@ CREATE TABLE IF NOT EXISTS pulse_users (
 ALTER TABLE pulse_users ADD COLUMN IF NOT EXISTS user_uuid VARCHAR(64);
 ALTER TABLE pulse_users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE pulse_users ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+ALTER TABLE pulse_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 ALTER TABLE pulse_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pulse_users_uuid ON pulse_users(user_uuid);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pulse_users_email ON pulse_users(email) WHERE email IS NOT NULL AND email != '';
 
 CREATE TABLE IF NOT EXISTS pulse_settings (
     user_uuid VARCHAR(64) PRIMARY KEY,

@@ -131,9 +131,19 @@ func TestMemoryPulseRepository(t *testing.T) {
 		assert.Equal(t, "bob@pulse.test", u.Email)
 		assert.NotEmpty(t, u.UserUUID)
 
+		// Nil / empty email
+		_, err = repo.CreateUser(ctx, nil)
+		assert.Error(t, err)
+		_, err = repo.CreateUser(ctx, &core.CreateUserRequest{Email: ""})
+		assert.Error(t, err)
+
 		// Duplicate create
 		_, err = repo.CreateUser(ctx, req)
 		assert.ErrorIs(t, err, ErrUserAlreadyExists)
+
+		// Non-existent email
+		_, err = repo.GetUserByEmail(ctx, "notfound@pulse.test")
+		assert.ErrorIs(t, err, ErrUserNotFound)
 
 		// Get by email
 		byEmail, err := repo.GetUserByEmail(ctx, "bob@pulse.test")

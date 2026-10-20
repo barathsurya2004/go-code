@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"testing"
@@ -364,5 +365,224 @@ func TestPostgresPulseRepository(t *testing.T) {
 		assert.NotNil(t, repo)
 		_, ok := repo.(*MemoryPulseRepository)
 		assert.True(t, ok)
+	})
+
+	t.Run("DeleteUserData validation and happy path", func(t *testing.T) {
+		repoNil := NewPostgresPulseRepository(nil, log)
+		assert.ErrorIs(t, repoNil.DeleteUserData(ctx, ""), ErrInvalidUserUUID)
+
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		mock.ExpectBegin()
+		tables := []string{
+			"pulse_workout_sessions",
+			"pulse_routines",
+			"pulse_plans",
+			"pulse_settings",
+			"pulse_skipped_days",
+			"pulse_sync_logs",
+		}
+		for _, tbl := range tables {
+			mock.ExpectExec("DELETE FROM " + tbl).
+				WithArgs("u-del-1").
+				WillReturnResult(sqlmock.NewResult(1, 1))
+		}
+		mock.ExpectExec("DELETE FROM pulse_users").
+			WithArgs("u-del-1").
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		repo := NewPostgresPulseRepository(db, log)
+		err = repo.DeleteUserData(ctx, "u-del-1")
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("DeleteUserData error paths", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		mock.ExpectBegin().WillReturnError(errors.New("tx error"))
+		repo := NewPostgresPulseRepository(db, log)
+		err = repo.DeleteUserData(ctx, "u-del-1")
+		assert.Error(t, err)
+
+		// Exec error
+		mock.ExpectBegin()
+		mock.ExpectExec("DELETE FROM pulse_workout_sessions").
+			WithArgs("u-del-1").
+			WillReturnError(errors.New("exec error"))
+		mock.ExpectRollback()
+		err = repo.DeleteUserData(ctx, "u-del-1")
+		assert.Error(t, err)
+	})
+
+	t.Run("CreateUser validation and success", func(t *testing.T) {
+		repoNil := NewPostgresPulseRepository(nil, log)
+		_, err := repoNil.CreateUser(ctx, nil)
+		assert.Error(t, err)
+		_, err = repoNil.CreateUser(ctx, &core.CreateUserRequest{Email: ""})
+		assert.Error(t, err)
+
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		now := time.Now()
+		// 1. GetUserByEmail check -> ErrNoRows
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("newuser@pulse.test").
+			WillReturnError(errors.New("no rows"))
+
+		// 2. Insert user
+		cols := []string{"id", "user_uuid", "email", "name", "created_at", "updated_at"}
+		mock.ExpectQuery("INSERT INTO pulse_users").
+			WithArgs(sqlmock.AnyArg(), "newuser@pulse.test", "New User", sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-new-1", "u-new-1", "newuser@pulse.test", "New User", now, now))
+
+		repo := NewPostgresPulseRepository(db, log)
+		user, err := repo.CreateUser(ctx, &core.CreateUserRequest{
+			Name:     "New User",
+			Email:    "newuser@pulse.test",
+			Password: "mypassword",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, user)
+		assert.Equal(t, "newuser@pulse.test", user.Email)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("CreateUser already exists", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		now := time.Now()
+		cols := []string{"id", "user_uuid", "email", "name", "password_hash", "created_at", "updated_at"}
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("exist@pulse.test").
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-ex", "u-ex", "exist@pulse.test", "Existing", "hash", now, now))
+
+		repo := NewPostgresPulseRepository(db, log)
+		_, err = repo.CreateUser(ctx, &core.CreateUserRequest{
+			Name:  "Existing",
+			Email: "exist@pulse.test",
+		})
+		assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	})
+
+	t.Run("GetUserByEmail and GetUserByUUID", func(t *testing.T) {
+		repoNil := NewPostgresPulseRepository(nil, log)
+		_, err := repoNil.GetUserByEmail(ctx, "")
+		assert.ErrorIs(t, err, ErrUserNotFound)
+		_, err = repoNil.GetUserByUUID(ctx, "")
+		assert.ErrorIs(t, err, ErrInvalidUserUUID)
+
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		now := time.Now()
+		cols := []string{"id", "user_uuid", "email", "name", "password_hash", "created_at", "updated_at"}
+
+		// GetUserByEmail found
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("found@pulse.test").
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-found", "u-found", "found@pulse.test", "Found", "hash", now, now))
+
+		// GetUserByUUID found
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("u-found").
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-found", "u-found", "found@pulse.test", "Found", "hash", now, now))
+
+		repo := NewPostgresPulseRepository(db, log)
+		u1, err := repo.GetUserByEmail(ctx, "found@pulse.test")
+		assert.NoError(t, err)
+		assert.Equal(t, "found@pulse.test", u1.Email)
+
+		u2, err := repo.GetUserByUUID(ctx, "u-found")
+		assert.NoError(t, err)
+		assert.Equal(t, "u-found", u2.UserUUID)
+
+		// GetUserByEmail not found
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("notfound@pulse.test").
+			WillReturnError(sql.ErrNoRows)
+		_, err = repo.GetUserByEmail(ctx, "notfound@pulse.test")
+		assert.ErrorIs(t, err, ErrUserNotFound)
+
+		// GetUserByEmail db error
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("dberr@pulse.test").
+			WillReturnError(errors.New("db error"))
+		_, err = repo.GetUserByEmail(ctx, "dberr@pulse.test")
+		assert.Error(t, err)
+
+		// GetUserByUUID not found
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("u-notfound").
+			WillReturnError(sql.ErrNoRows)
+		_, err = repo.GetUserByUUID(ctx, "u-notfound")
+		assert.ErrorIs(t, err, ErrUserNotFound)
+
+		// GetUserByUUID db error
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("u-dberr").
+			WillReturnError(errors.New("db error"))
+		_, err = repo.GetUserByUUID(ctx, "u-dberr")
+		assert.Error(t, err)
+
+		// CreateUser db query error
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("queryerr@pulse.test").
+			WillReturnError(sql.ErrNoRows)
+		mock.ExpectQuery("INSERT INTO pulse_users").
+			WithArgs(sqlmock.AnyArg(), "queryerr@pulse.test", "QErr", sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnError(errors.New("insert failed"))
+		_, err = repo.CreateUser(ctx, &core.CreateUserRequest{
+			Name:  "QErr",
+			Email: "queryerr@pulse.test",
+		})
+		assert.Error(t, err)
+	})
+
+	t.Run("AuthenticateUser success and fail", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+
+		now := time.Now()
+		// Test pass hash
+		passHash := "$2a$10$abcdefghijklmnopqrstuvwxyz12345678901234567890" // invalid hash or empty
+		cols := []string{"id", "user_uuid", "email", "name", "password_hash", "created_at", "updated_at"}
+
+		// Not found
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("missing@pulse.test").
+			WillReturnError(errors.New("no rows"))
+
+		// Found with bad hash
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("auth@pulse.test").
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-auth", "u-auth", "auth@pulse.test", "Auth", passHash, now, now))
+
+		// Found with empty hash
+		mock.ExpectQuery("SELECT id, COALESCE\\(user_uuid, id\\)").
+			WithArgs("nohash@pulse.test").
+			WillReturnRows(sqlmock.NewRows(cols).AddRow("u-nohash", "u-nohash", "nohash@pulse.test", "NoHash", "", now, now))
+
+		repo := NewPostgresPulseRepository(db, log)
+		_, err = repo.AuthenticateUser(ctx, "missing@pulse.test", "pass")
+		assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+		_, err = repo.AuthenticateUser(ctx, "auth@pulse.test", "pass")
+		assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+		u, err := repo.AuthenticateUser(ctx, "nohash@pulse.test", "any")
+		assert.NoError(t, err)
+		assert.Equal(t, "u-nohash", u.UserUUID)
 	})
 }
