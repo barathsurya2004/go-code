@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PostgresPulseRepository struct {
@@ -346,6 +348,151 @@ func (r *PostgresPulseRepository) GetUserStats(ctx context.Context, userUUID str
 	_ = row.Scan(&stats.TotalRoutines)
 
 	return &stats, nil
+}
+
+func (r *PostgresPulseRepository) DeleteUserData(ctx context.Context, userUUID string) error {
+	if userUUID == "" {
+		return ErrInvalidUserUUID
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	tables := []string{
+		"pulse_workout_sessions",
+		"pulse_routines",
+		"pulse_plans",
+		"pulse_settings",
+		"pulse_skipped_days",
+		"pulse_sync_logs",
+	}
+	for _, tbl := range tables {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE user_uuid = $1", tbl), userUUID); err != nil {
+			return fmt.Errorf("failed to delete from %s: %w", tbl, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM pulse_users WHERE user_uuid = $1 OR id = $1", userUUID); err != nil {
+		return fmt.Errorf("failed to delete from pulse_users: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (r *PostgresPulseRepository) CreateUser(ctx context.Context, req *core.CreateUserRequest) (*core.PulseUser, error) {
+	if req == nil {
+		return nil, errors.New("empty create user request")
+	}
+	if req.Email == "" {
+		return nil, errors.New("email is required")
+	}
+
+	uuidStr := req.UserUUID
+	if uuidStr == "" {
+		uuidStr = uuid.New().String()
+	}
+
+	var passHash string
+	if req.Password != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
+		}
+		passHash = string(hashed)
+	}
+
+	now := time.Now()
+	// Check if user with this email already exists
+	existing, err := r.GetUserByEmail(ctx, req.Email)
+	if err == nil && existing != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	query := `
+		INSERT INTO pulse_users (id, user_uuid, email, name, password_hash, created_at, updated_at)
+		VALUES ($1, $1, $2, $3, $4, $5, $5)
+		ON CONFLICT (id) DO UPDATE SET
+			email = EXCLUDED.email,
+			name = EXCLUDED.name,
+			password_hash = CASE WHEN EXCLUDED.password_hash != '' THEN EXCLUDED.password_hash ELSE pulse_users.password_hash END,
+			updated_at = EXCLUDED.updated_at
+		RETURNING id, user_uuid, email, name, created_at, updated_at
+	`
+	user := core.PulseUser{
+		ID:           uuidStr,
+		UserUUID:     uuidStr,
+		Email:        req.Email,
+		Name:         req.Name,
+		PasswordHash: passHash,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	err = r.db.QueryRowContext(ctx, query, uuidStr, req.Email, req.Name, passHash, now).
+		Scan(&user.ID, &user.UserUUID, &user.Email, &user.Name, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pulse user: %w", err)
+	}
+
+	return &user, nil
+}
+
+func (r *PostgresPulseRepository) GetUserByEmail(ctx context.Context, email string) (*core.PulseUser, error) {
+	if email == "" {
+		return nil, ErrUserNotFound
+	}
+	query := `
+		SELECT id, COALESCE(user_uuid, id), COALESCE(email, ''), COALESCE(name, ''), COALESCE(password_hash, ''), created_at, updated_at
+		FROM pulse_users
+		WHERE LOWER(email) = LOWER($1)
+		LIMIT 1
+	`
+	var u core.PulseUser
+	err := r.db.QueryRowContext(ctx, query, email).Scan(&u.ID, &u.UserUUID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to query user by email: %w", err)
+	}
+	return &u, nil
+}
+
+func (r *PostgresPulseRepository) GetUserByUUID(ctx context.Context, userUUID string) (*core.PulseUser, error) {
+	if userUUID == "" {
+		return nil, ErrInvalidUserUUID
+	}
+	query := `
+		SELECT id, COALESCE(user_uuid, id), COALESCE(email, ''), COALESCE(name, ''), COALESCE(password_hash, ''), created_at, updated_at
+		FROM pulse_users
+		WHERE user_uuid = $1 OR id = $1
+		LIMIT 1
+	`
+	var u core.PulseUser
+	err := r.db.QueryRowContext(ctx, query, userUUID).Scan(&u.ID, &u.UserUUID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to query user by uuid: %w", err)
+	}
+	return &u, nil
+}
+
+func (r *PostgresPulseRepository) AuthenticateUser(ctx context.Context, email, password string) (*core.PulseUser, error) {
+	user, err := r.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	if user.PasswordHash != "" {
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+			return nil, ErrInvalidCredentials
+		}
+	}
+	return user, nil
 }
 
 func (r *PostgresPulseRepository) Close() error {

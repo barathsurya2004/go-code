@@ -120,6 +120,54 @@ func TestMemoryPulseRepository(t *testing.T) {
 		assert.Equal(t, 0, stats.TotalRoutines)
 	})
 
+	t.Run("CreateUser and AuthenticateUser", func(t *testing.T) {
+		req := &core.CreateUserRequest{
+			Name:     "Athlete Bob",
+			Email:    "bob@pulse.test",
+			Password: "secretpassword",
+		}
+		u, err := repo.CreateUser(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, "bob@pulse.test", u.Email)
+		assert.NotEmpty(t, u.UserUUID)
+
+		// Duplicate create
+		_, err = repo.CreateUser(ctx, req)
+		assert.ErrorIs(t, err, ErrUserAlreadyExists)
+
+		// Get by email
+		byEmail, err := repo.GetUserByEmail(ctx, "bob@pulse.test")
+		assert.NoError(t, err)
+		assert.Equal(t, u.UserUUID, byEmail.UserUUID)
+
+		// Get by UUID
+		byUUID, err := repo.GetUserByUUID(ctx, u.UserUUID)
+		assert.NoError(t, err)
+		assert.Equal(t, "bob@pulse.test", byUUID.Email)
+
+		// Auth success
+		authU, err := repo.AuthenticateUser(ctx, "bob@pulse.test", "secretpassword")
+		assert.NoError(t, err)
+		assert.Equal(t, u.UserUUID, authU.UserUUID)
+
+		// Auth bad password
+		_, err = repo.AuthenticateUser(ctx, "bob@pulse.test", "wrongpass")
+		assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+		// Auth non-existent email
+		_, err = repo.AuthenticateUser(ctx, "nobody@pulse.test", "pass")
+		assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+		// Delete user
+		assert.NoError(t, repo.DeleteUserData(ctx, u.UserUUID))
+		_, err = repo.GetUserByUUID(ctx, u.UserUUID)
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("DeleteUserData empty user_uuid", func(t *testing.T) {
+		assert.ErrorIs(t, repo.DeleteUserData(ctx, ""), ErrInvalidUserUUID)
+	})
+
 	t.Run("Close returns nil", func(t *testing.T) {
 		assert.NoError(t, repo.Close())
 	})

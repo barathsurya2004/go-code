@@ -44,6 +44,13 @@ if [ -f "$REPO_DIR/src/nutrition-service/.env" ]; then
   set +a
 fi
 
+if [ -f "$REPO_DIR/src/pulse-service/.env" ]; then
+  echo "Loading environment from $REPO_DIR/src/pulse-service/.env..."
+  set -a
+  source "$REPO_DIR/src/pulse-service/.env"
+  set +a
+fi
+
 # 4. Deploy via Docker Compose
 case "$SERVICE_NAME" in
   penne-service)
@@ -68,12 +75,26 @@ case "$SERVICE_NAME" in
     # Ensure dedicated database exists for nouri/nutrition-service
     docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'nouri_db'" 2>/dev/null | grep -q 1 || \
     docker exec -i penne_db psql -U postgres -c "CREATE DATABASE nouri_db;" 2>/dev/null || true
-    echo "Rebuilding backend services (penne-service, nutrition-service, gateway)..."
+    # Ensure dedicated database exists for pulse-service
+    docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'pulse_app'" 2>/dev/null | grep -q 1 || \
+    docker exec -i penne_db psql -U postgres -c "CREATE DATABASE pulse_app;" 2>/dev/null || true
+    echo "Rebuilding backend services (penne-service, nutrition-service, pulse-service, gateway)..."
     docker compose build penne-service
     docker compose build nutrition-service
+    docker compose build pulse-service
     docker compose build gateway
     echo "Deploying entire backend stack..."
     docker compose up -d
+    ;;
+  pulse-service)
+    echo "Starting database service..."
+    docker compose up -d db
+    sleep 2
+    docker exec -i penne_db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'pulse_app'" 2>/dev/null | grep -q 1 || \
+    docker exec -i penne_db psql -U postgres -c "CREATE DATABASE pulse_app;" 2>/dev/null || true
+    echo "Rebuilding and restarting pulse-service..."
+    docker compose build pulse-service
+    docker compose up -d pulse-service
     ;;
   nutrition-service)
     echo "Starting database service..."

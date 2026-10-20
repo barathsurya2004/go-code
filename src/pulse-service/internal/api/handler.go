@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -101,6 +102,165 @@ func (h *PulseHandler) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// HandleCreateUser creates or provisions a Pulse user
+func (h *PulseHandler) HandleCreateUser(w http.ResponseWriter, r *http.Request) {
+	var req core.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	user, err := h.repo.CreateUser(r.Context(), &req)
+	if err != nil {
+		if errors.Is(err, db.ErrUserAlreadyExists) {
+			writeError(w, http.StatusConflict, "user with this email already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to create user: "+err.Error())
+		return
+	}
+
+	resp := core.AuthResponse{
+		Token:    user.UserUUID,
+		UserUUID: user.UserUUID,
+		User:     user,
+		Message:  "User created successfully",
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// HandleSignup handles user registration for Pulse
+func (h *PulseHandler) HandleSignup(w http.ResponseWriter, r *http.Request) {
+	var req core.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Email == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name and email are required")
+		return
+	}
+
+	user, err := h.repo.CreateUser(r.Context(), &req)
+	if err != nil {
+		if errors.Is(err, db.ErrUserAlreadyExists) {
+			writeError(w, http.StatusConflict, "user with this email already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to register user: "+err.Error())
+		return
+	}
+
+	resp := core.AuthResponse{
+		Token:    user.UserUUID,
+		UserUUID: user.UserUUID,
+		User:     user,
+		Message:  "Registration successful",
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// HandleLogin handles user login for Pulse
+func (h *PulseHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	var req core.AuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	user, err := h.repo.AuthenticateUser(r.Context(), req.Email, req.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+
+	resp := core.AuthResponse{
+		Token:    user.UserUUID,
+		UserUUID: user.UserUUID,
+		User:     user,
+		Message:  "Login successful",
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// HandleGetUser returns the profile for the authenticated Pulse user
+func (h *PulseHandler) HandleGetUser(w http.ResponseWriter, r *http.Request) {
+	userUUID := r.Header.Get("x-user-uuid")
+	if userUUID == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			userUUID = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+	if userUUID == "" {
+		userUUID = r.URL.Query().Get("user_uuid")
+	}
+
+	if userUUID == "" {
+		writeError(w, http.StatusUnauthorized, "missing authentication token or x-user-uuid")
+		return
+	}
+
+	user, err := h.repo.GetUserByUUID(r.Context(), userUUID)
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			// If not found in pulse_users table, return a basic user profile from the token
+			writeJSON(w, http.StatusOK, &core.PulseUser{
+				ID:       userUUID,
+				UserUUID: userUUID,
+				Name:     "Athlete",
+				Email:    "",
+			})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get user: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user)
+}
+
+// HandleDeleteUserData wipes data for testing/reset
+func (h *PulseHandler) HandleDeleteUserData(w http.ResponseWriter, r *http.Request) {
+	userUUID := r.Header.Get("x-user-uuid")
+	if userUUID == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			userUUID = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+	if userUUID == "" {
+		userUUID = r.URL.Query().Get("user_uuid")
+	}
+
+	if userUUID == "" {
+		writeError(w, http.StatusBadRequest, "user_uuid is required")
+		return
+	}
+
+	if err := h.repo.DeleteUserData(r.Context(), userUUID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete user data: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":    "ok",
+		"message":   "User data successfully purged",
+		"user_uuid": userUUID,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

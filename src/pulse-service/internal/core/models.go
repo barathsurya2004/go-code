@@ -108,3 +108,32 @@ type PulseUserStats struct {
 	TotalRoutines  int       `json:"total_routines"`
 	LastSyncedAt   time.Time `json:"last_synced_at"`
 }
+
+type PulseUser struct {
+	ID           string    `json:"id"`
+	UserUUID     string    `json:"user_uuid"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type CreateUserRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password,omitempty"`
+	UserUUID string `json:"user_uuid,omitempty"`
+}
+
+type AuthRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthResponse struct {
+	Token    string     `json:"token"`
+	UserUUID string     `json:"user_uuid"`
+	User     *PulseUser `json:"user"`
+	Message  string     `json:"message,omitempty"`
+}
